@@ -1,0 +1,77 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.aiolos</groupId>
+  <artifactId>plaza</artifactId>
+  <version>1.0-SNAPSHOT</version>
+  
+  <packaging>pom</packaging>
+  <modules>
+    <module>plaza-common</module>
+    <module>plaza-enums</module>
+    <module>plaza-model</module>
+    <module>plaza-service</module>
+      <module>plaza-home</module>
+  </modules>
+
+  <properties>
+    <mysql.version>8.0.28</mysql.version>
+    <mybatis-plus.version>3.5.5</mybatis-plus.version>
+    <sharding.jdbc.version>5.3.2</sharding.jdbc.version>
+    
+    <plaza-common.version>1.0-SNAPSHOT</plaza-common.version>
+    <plaza-enums.version>1.0-SNAPSHOT</plaza-enums.version>
+    <plaza-model.version>1.0-SNAPSHOT</plaza-model.version>
+    <plaza-service.version>1.0-SNAPSHOT</plaza-service.version>
+    <plaza-home.version>1.0-SNAPSHOT</plaza-home.version>
+  </properties>
+  
+  <parent>
+    <groupId>com.aiolos</groupId>
+    <artifactId>common</artifactId>
+    <version>1.0-SNAPSHOT</version>
+  </parent>
+  
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>com.aiolos</groupId>
+        <artifactId>plaza-common</artifactId>
+        <version>${plaza-common.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.aiolos</groupId>
+        <artifactId>plaza-enums</artifactId>
+        <version>${plaza-enums.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.aiolos</groupId>
+        <artifactId>plaza-model</artifactId>
+        <version>${plaza-model.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.aiolos</groupId>
+        <artifactId>plaza-service</artifactId>
+        <version>${plaza-service.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-maven-plugin</artifactId>
+          <executions>
+            <execution>
+              <goals>
+                <goal>repackage</goal>
+              </goals>
+            </execution>
+          </executions>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+  </build>
+</project>
