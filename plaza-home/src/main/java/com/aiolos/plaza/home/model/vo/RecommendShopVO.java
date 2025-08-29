@@ -12,6 +12,8 @@ public class RecommendShopVO {
     
     private String name;
 
+    private Long categoryId;
+
     private String iconUrl;
     
     private BigDecimal score;

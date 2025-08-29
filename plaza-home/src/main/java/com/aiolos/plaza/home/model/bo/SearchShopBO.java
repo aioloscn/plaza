@@ -16,4 +16,10 @@ public class SearchShopBO {
     
     @Schema(description = "搜索的关键词")
     private String keyword;
+
+    @Schema(description = "分类id")
+    private Long categoryId;
+
+    @Schema(description = "排序字段，0或null使用默认综合排序，1使用距离排序")
+    private Integer orderBy = 0;
 }
