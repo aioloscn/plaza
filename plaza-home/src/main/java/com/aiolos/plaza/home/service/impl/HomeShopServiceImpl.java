@@ -57,6 +57,36 @@ public class HomeShopServiceImpl implements HomeShopService {
     @Override
     public PageResult<RecommendShopVO> search(PageModel<SearchShopBO> model) {
         
-        return null;
+        SearchShopBO data = model.getData();
+        QueryWrapper<Shop> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("status", BoolEnum.YES.getCode());
+        if (data.getCategoryId() != null) {
+            queryWrapper.eq("category_id", data.getCategoryId());
+        }
+        queryWrapper.and(wrapper -> wrapper
+                .like("name", data.getKeyword())
+                .or().like("tags", data.getKeyword())
+                .or().like("address", data.getKeyword()));
+        long total = shopService.count(queryWrapper);
+        
+        List<Shop> list = shopMapper.search(data.getLatitude().doubleValue(), data.getLongitude().doubleValue(), data.getKeyword(), data.getCategoryId(), data.getOrderBy());
+        PageResult<RecommendShopVO> pageResult = new PageResult<>();
+        pageResult.setCurrent(model.getCurrent());
+        pageResult.setSize(model.getSize());
+        pageResult.setTotal(total);
+        
+        if (CollectionUtil.isNotEmpty(list)) {
+            List<RecommendShopVO> records = list.stream().map(shop -> {
+                RecommendShopVO vo = ConvertBeanUtil.convert(shop, RecommendShopVO.class);
+                if (shop.getDistance() != null && shop.getDistance() > 1000) {
+                    vo.setDistance(shop.getDistance() / 1000 + "km");
+                } else {
+                    vo.setDistance(shop.getDistance() != null ? shop.getDistance() + "m" : "");
+                }
+                return vo;
+            }).collect(Collectors.toList());
+            pageResult.setRecords(records);
+        }
+        return pageResult;
     }
 }
