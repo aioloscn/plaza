@@ -37,4 +37,13 @@ public class ShopController {
         
         return homeShopService.search(model);
     }
+    
+    @PostMapping("/searchES")
+    public PageResult<RecommendShopVO> searchES(@RequestBody PageModel<SearchShopBO> model) {
+        if (model.getData() == null || model.getData().getLongitude() == null || model.getData().getLatitude() == null || model.getData().getKeyword() == null)
+            return PageConvertUtil.convert(model.getPage(RecommendShopVO.class));
+        
+        return homeShopService.searchES(model);
+    }
+
 }

@@ -19,6 +19,8 @@ public class SearchShopBO {
 
     @Schema(description = "分类id")
     private Long categoryId;
+    
+    private String tag;
 
     @Schema(description = "排序字段，0或null使用默认综合排序，1使用距离排序")
     private Integer orderBy = 0;

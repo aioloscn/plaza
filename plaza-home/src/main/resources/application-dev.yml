@@ -27,3 +27,8 @@ spring:
           min-idle: 1
           max-idle: 5
           max-active: 10
+  elasticsearch:
+    host: ${ES_HOST:81.71.45.30}
+    port: ${ES_PORT:9200}
+    username: ${ES_USERNAME:elastic}
+    password: ${ES_PASSWORD:elastic}

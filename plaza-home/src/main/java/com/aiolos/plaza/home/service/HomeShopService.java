@@ -16,4 +16,11 @@ public interface HomeShopService {
     PageResult<RecommendShopVO> recommend(PageModel<RecommendShopBO> model);
 
     PageResult<RecommendShopVO> search(PageModel<SearchShopBO> model);
+    
+    /**
+     * 使用Elasticsearch搜索门店
+     * @param model
+     * @return
+     */
+    PageResult<RecommendShopVO> searchES(PageModel<SearchShopBO> model);
 }
