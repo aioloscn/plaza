@@ -2,6 +2,7 @@ package com.aiolos.plaza.mapper;
 
 import com.aiolos.plaza.model.po.Shop;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import dto.ShopDTO;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
@@ -45,4 +46,23 @@ public interface ShopMapper extends BaseMapper<Shop> {
             "</choose>" +
             "</script>")
     List<Shop> search(@Param("latitude") double latitude, @Param("longitude") double longitude, @Param("keyword") String keyword, @Param("categoryId") Long categoryId, @Param("orderBy") Integer orderBy);
+    
+    @Select("<script>" +
+            "select \n" +
+            "  a.id, a.name, a.icon_url, a.address, a.tags, \n" +
+            "  concat(a.latitude,',',a.longitude) as location,\n" +
+            "  a.latitude, a.longitude, a.score, a.per_capita_price, \n" +
+            "  a.category_id, b.name as category_name,\n" +
+            "  a.seller_id, c.score as seller_score, a.status, c.status as seller_disabled_flag,\n" +
+            "  a.create_time, a.update_time \n" +
+            "from shop a \n" +
+            "inner join category b on a.category_id = b.id \n" +
+            "inner join seller c on c.id = a.seller_id \n" +
+            "<where> \n" +
+                "<if test='id != null'> and a.id = #{id} </if>" +
+                "<if test='categoryId != null'> and a.category_id = #{categoryId} </if>" +
+                "<if test='sellerId != null'> and a.seller_id = #{sellerId} </if>" +
+            "</where>" +
+            "</script>")
+    List<ShopDTO> listShops(@Param("id") Long id, @Param("categoryId") Long categoryId, @Param("sellerId") Long sellerId);
 }
