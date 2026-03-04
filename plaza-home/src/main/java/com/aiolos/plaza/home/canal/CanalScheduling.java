@@ -13,36 +13,83 @@ import org.apache.commons.lang3.StringUtils;
 import org.elasticsearch.client.Request;
 import org.elasticsearch.client.Response;
 import org.elasticsearch.client.RestClient;
-import org.springframework.beans.BeansException;
-import org.springframework.context.ApplicationContext;
-import org.springframework.context.ApplicationContextAware;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 @Slf4j
 @Component
-public class CanalScheduling implements Runnable, ApplicationContextAware {
-    
-    private ApplicationContext applicationContext;
+public class CanalScheduling implements Runnable {
 
+    // 任务级互斥锁
+    private static final String CANAL_RUN_LOCK_KEY = "lock:canal:run";
+    private static final long CANAL_RUN_LOCK_TTL_SECONDS = 15L;
+    // 按 shopId 的细粒度锁
+    private static final String SHOP_INDEX_LOCK_KEY_PREFIX = "lock:shop:index:";
+    private static final long SHOP_INDEX_LOCK_TTL_SECONDS = 5L;
+    private static final int SHOP_INDEX_LOCK_MAX_RETRY_COUNT = 2;
+    private static final long SHOP_INDEX_LOCK_RETRY_INTERVAL_MILLIS = 50L;
+    // 续约与安全释放脚本
+    private static final DefaultRedisScript<Long> RENEW_LOCK_SCRIPT = new DefaultRedisScript<>();
+    private static final DefaultRedisScript<Long> RELEASE_LOCK_SCRIPT = new DefaultRedisScript<>();
+    // 异步续约线程池
+    private static final ScheduledExecutorService LOCK_RENEW_EXECUTOR = Executors.newScheduledThreadPool(1);
+
+    static {
+        RENEW_LOCK_SCRIPT.setResultType(Long.class);
+        RENEW_LOCK_SCRIPT.setScriptText("if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('expire', KEYS[1], tonumber(ARGV[2])) else return 0 end");
+        RELEASE_LOCK_SCRIPT.setResultType(Long.class);
+        RELEASE_LOCK_SCRIPT.setScriptText("if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end");
+    }
+    
     @Resource
     private ShopMapper shopMapper;
     @Resource
     private CanalConnector canalConnector;
     @Resource
     private RestClient restClient;
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
     
     private final ObjectMapper objectMapper = new ObjectMapper();
+    // 锁行为计数器（便于观察稳定性与冲突情况）
+    private final AtomicLong runLockAcquireSuccessCount = new AtomicLong();
+    private final AtomicLong runLockAcquireFailCount = new AtomicLong();
+    private final AtomicLong shopLockAcquireSuccessCount = new AtomicLong();
+    private final AtomicLong shopLockAcquireFailCount = new AtomicLong();
+    private final AtomicLong renewSuccessCount = new AtomicLong();
+    private final AtomicLong renewFailCount = new AtomicLong();
+    private final AtomicLong releaseSuccessCount = new AtomicLong();
+    private final AtomicLong releaseFailCount = new AtomicLong();
+    private final AtomicLong metricsLogTrigger = new AtomicLong();
     
     @Override
     @Scheduled(fixedDelay = 100)    // 每隔100ms拉取一次数据
     public void run() {
+        // 获取任务锁后立即注册续约任务，避免长耗时处理导致锁过期
+        LockHandle runLockHandle = acquireLockWithRenewal(CANAL_RUN_LOCK_KEY, CANAL_RUN_LOCK_TTL_SECONDS);
+        if (runLockHandle == null) {
+            runLockAcquireFailCount.incrementAndGet();
+            logLockMetricsIfNeeded();
+            return;
+        }
+        runLockAcquireSuccessCount.incrementAndGet();
+
         long batchId = -1;
         try {
             Message message = canalConnector.getWithoutAck(1000);   // 需要手动ack
@@ -97,6 +144,10 @@ public class CanalScheduling implements Runnable, ApplicationContextAware {
             if (batchId != -1) {
                 canalConnector.rollback(batchId);
             }
+        } finally {
+            // 释放前先取消续约任务，再执行Lua安全释放
+            releaseLock(runLockHandle);
+            logLockMetricsIfNeeded();
         }
     }
 
@@ -129,15 +180,184 @@ public class CanalScheduling implements Runnable, ApplicationContextAware {
                 return;
             }
             
-            // 批量索引到ES
             if (shopList != null && !shopList.isEmpty()) {
-                bulkIndexToES(shopList);
-                log.info("成功同步{}条shop数据到ES", shopList.size());
+                List<ShopDTO> shopsToIndex = new ArrayList<>();
+                List<LockHandle> acquiredShopLocks = new ArrayList<>();
+                try {
+                    for (ShopDTO shop : shopList) {
+                        if (shop == null || shop.getId() == null) {
+                            continue;
+                        }
+                        String lockKey = SHOP_INDEX_LOCK_KEY_PREFIX + shop.getId();
+                        // shop级锁同样启用“重试 + 自动续约”
+                        LockHandle lockHandle = acquireLockWithRetryAndRenewal(
+                            lockKey,
+                            SHOP_INDEX_LOCK_TTL_SECONDS,
+                            SHOP_INDEX_LOCK_MAX_RETRY_COUNT,
+                            SHOP_INDEX_LOCK_RETRY_INTERVAL_MILLIS
+                        );
+                        if (lockHandle != null) {
+                            shopLockAcquireSuccessCount.incrementAndGet();
+                            shopsToIndex.add(shop);
+                            acquiredShopLocks.add(lockHandle);
+                        } else {
+                            shopLockAcquireFailCount.incrementAndGet();
+                            log.warn("获取shop索引锁失败，shopId: {}", shop.getId());
+                        }
+                    }
+                    if (!shopsToIndex.isEmpty()) {
+                        bulkIndexToES(shopsToIndex);
+                        log.info("成功同步{}条shop数据到ES", shopsToIndex.size());
+                    }
+                } finally {
+                    acquiredShopLocks.forEach(this::releaseLock);
+                }
             }
             
         } catch (Exception e) {
             log.error("索引数据到ES失败, database: {}, table: {}, columnMap: {}", 
                 database, table, columnMap, e);
+        }
+    }
+
+    private String createLockOwner() {
+        return UUID.randomUUID() + ":" + Thread.currentThread().getId();
+    }
+
+    // 获取锁并绑定续约任务，返回null表示获取失败
+    private LockHandle acquireLockWithRenewal(String lockKey, long ttlSeconds) {
+        String lockOwner = createLockOwner();
+        if (!tryAcquireLock(lockKey, lockOwner, ttlSeconds)) {
+            return null;
+        }
+        ScheduledFuture<?> renewTask = scheduleLockRenewal(lockKey, lockOwner, ttlSeconds);
+        return new LockHandle(lockKey, lockOwner, renewTask);
+    }
+
+    private boolean tryAcquireLock(String lockKey, String lockOwner, long ttlSeconds) {
+        Boolean acquired = stringRedisTemplate.opsForValue()
+            .setIfAbsent(lockKey, lockOwner, ttlSeconds, TimeUnit.SECONDS);
+        return Boolean.TRUE.equals(acquired);
+    }
+
+    private boolean tryAcquireLockWithRetry(
+        String lockKey,
+        String lockOwner,
+        long ttlSeconds,
+        int maxRetryCount,
+        long retryIntervalMillis
+    ) {
+        for (int retry = 0; retry <= maxRetryCount; retry++) {
+            if (tryAcquireLock(lockKey, lockOwner, ttlSeconds)) {
+                return true;
+            }
+            if (retry < maxRetryCount) {
+                try {
+                    Thread.sleep(retryIntervalMillis);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return false;
+                }
+            }
+        }
+        return false;
+    }
+
+    // 有限重试获取锁，成功后注册续约任务
+    private LockHandle acquireLockWithRetryAndRenewal(
+        String lockKey,
+        long ttlSeconds,
+        int maxRetryCount,
+        long retryIntervalMillis
+    ) {
+        String lockOwner = createLockOwner();
+        boolean acquired = tryAcquireLockWithRetry(lockKey, lockOwner, ttlSeconds, maxRetryCount, retryIntervalMillis);
+        if (!acquired) {
+            return null;
+        }
+        ScheduledFuture<?> renewTask = scheduleLockRenewal(lockKey, lockOwner, ttlSeconds);
+        return new LockHandle(lockKey, lockOwner, renewTask);
+    }
+
+    // 续约频率约为TTL的1/3，降低误过期概率
+    private ScheduledFuture<?> scheduleLockRenewal(String lockKey, String lockOwner, long ttlSeconds) {
+        long renewIntervalMillis = Math.max(1000L, TimeUnit.SECONDS.toMillis(ttlSeconds) / 3);
+        return LOCK_RENEW_EXECUTOR.scheduleAtFixedRate(
+            () -> renewLock(lockKey, lockOwner, ttlSeconds),
+            renewIntervalMillis,    // initialDelay
+            renewIntervalMillis,    // period
+            TimeUnit.MILLISECONDS
+        );
+    }
+
+    // Lua续约：仅锁持有者可延长TTL
+    private void renewLock(String lockKey, String lockOwner, long ttlSeconds) {
+        try {
+            Long renewed = stringRedisTemplate.execute(
+                RENEW_LOCK_SCRIPT,
+                Collections.singletonList(lockKey),
+                lockOwner,
+                String.valueOf(ttlSeconds)
+            );
+            if (Long.valueOf(1L).equals(renewed)) {
+                renewSuccessCount.incrementAndGet();
+            } else {
+                renewFailCount.incrementAndGet();
+            }
+        } catch (Exception e) {
+            renewFailCount.incrementAndGet();
+            log.warn("锁续约失败，lockKey: {}", lockKey, e);
+        }
+    }
+
+    // 安全释放：先停续约，再由Lua校验owner后删除
+    private void releaseLock(LockHandle lockHandle) {
+        if (lockHandle == null) {
+            return;
+        }
+        if (lockHandle.renewTask != null) {
+            lockHandle.renewTask.cancel(false);
+        }
+        Long released = stringRedisTemplate.execute(
+            RELEASE_LOCK_SCRIPT,
+            Collections.singletonList(lockHandle.lockKey),
+            lockHandle.lockOwner
+        );
+        if (Long.valueOf(1L).equals(released)) {
+            releaseSuccessCount.incrementAndGet();
+        } else {
+            releaseFailCount.incrementAndGet();
+        }
+    }
+
+    // 每100次触发打印一次锁指标，避免日志过量
+    private void logLockMetricsIfNeeded() {
+        long current = metricsLogTrigger.incrementAndGet();
+        if (current % 100 == 0) {
+            log.info(
+                "锁统计 runSuccess:{} runFail:{} shopSuccess:{} shopFail:{} renewSuccess:{} renewFail:{} releaseSuccess:{} releaseFail:{}",
+                runLockAcquireSuccessCount.get(),
+                runLockAcquireFailCount.get(),
+                shopLockAcquireSuccessCount.get(),
+                shopLockAcquireFailCount.get(),
+                renewSuccessCount.get(),
+                renewFailCount.get(),
+                releaseSuccessCount.get(),
+                releaseFailCount.get()
+            );
+        }
+    }
+
+    // 统一封装锁上下文，确保续约与释放生命周期一致
+    private static class LockHandle {
+        private final String lockKey;
+        private final String lockOwner;
+        private final ScheduledFuture<?> renewTask;
+
+        private LockHandle(String lockKey, String lockOwner, ScheduledFuture<?> renewTask) {
+            this.lockKey = lockKey;
+            this.lockOwner = lockOwner;
+            this.renewTask = renewTask;
         }
     }
     
@@ -256,8 +476,4 @@ public class CanalScheduling implements Runnable, ApplicationContextAware {
         return doc;
     }
 
-    @Override
-    public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
-        this.applicationContext = applicationContext;
-    }
 }
