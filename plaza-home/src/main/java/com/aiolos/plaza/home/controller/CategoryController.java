@@ -1,5 +1,6 @@
 package com.aiolos.plaza.home.controller;
 
+import com.aiolos.common.cloud.annotation.IgnoreAuth;
 import com.aiolos.plaza.home.model.vo.CategoryVO;
 import com.aiolos.plaza.home.service.HomeCategoryService;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -13,6 +14,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/category")
 @Tag(name = "品类服务")
+@IgnoreAuth
 public class CategoryController {
     
     @Autowired

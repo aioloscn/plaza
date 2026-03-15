@@ -17,6 +17,7 @@ import com.aiolos.plaza.service.ShopService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dto.ShopDTO;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -195,6 +196,10 @@ public class HomeShopServiceImpl implements HomeShopService {
         return pageResult;
     }
 
+    @Override
+    public RecommendShopVO detail(Long id) {
+        return ConvertBeanUtil.convert(shopService.lambdaQuery().eq(Shop::getId, id).one(), RecommendShopVO.class);
+    }
     
     /**
      * 构建Elasticsearch查询

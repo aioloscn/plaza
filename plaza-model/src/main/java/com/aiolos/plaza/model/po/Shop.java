@@ -113,6 +113,7 @@ public class Shop implements Serializable {
     @TableField("update_time")
     private LocalDateTime updateTime;
     
+    @TableField(exist = false)
     private Integer distance;
 
     public static final String ID = "id";

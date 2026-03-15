@@ -12,6 +12,8 @@
     <module>plaza-model</module>
     <module>plaza-service</module>
     <module>plaza-home</module>
+    <module>plaza-shop</module>
+      <module>plaza-cart</module>
   </modules>
 
   <properties>

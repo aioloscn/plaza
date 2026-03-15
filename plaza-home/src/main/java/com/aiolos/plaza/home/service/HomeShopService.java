@@ -23,4 +23,11 @@ public interface HomeShopService {
      * @return
      */
     PageResult<RecommendShopVO> searchES(PageModel<SearchShopBO> model);
+
+    /**
+     * 获取门店详情
+     * @param id
+     * @return
+     */
+    RecommendShopVO detail(Long id);
 }

@@ -6,9 +6,10 @@
         <artifactId>plaza</artifactId>
         <version>1.0-SNAPSHOT</version>
     </parent>
-    <artifactId>plaza-home</artifactId>
-    <version>${plaza-home.version}</version>
-    
+    <artifactId>plaza-shop</artifactId>
+    <name>plaza-shop</name>
+    <url>http://maven.apache.org</url>
+
     <dependencies>
         <dependency>
             <groupId>com.aiolos</groupId>
@@ -21,6 +22,10 @@
         <dependency>
             <groupId>com.aiolos</groupId>
             <artifactId>common-redis</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.aiolos</groupId>
+            <artifactId>common-exception</artifactId>
         </dependency>
         <dependency>
             <groupId>com.aiolos</groupId>
@@ -47,35 +52,10 @@
             <artifactId>mysql-connector-java</artifactId>
             <version>${mysql.version}</version>
         </dependency>
-        <dependency>
-            <groupId>org.elasticsearch</groupId>
-            <artifactId>elasticsearch</artifactId>
-            <version>${elasticsearch.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.elasticsearch.client</groupId>
-            <artifactId>elasticsearch-rest-client</artifactId>
-            <version>${elasticsearch.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.alibaba.otter</groupId>
-            <artifactId>canal.common</artifactId>
-            <version>${canal.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.alibaba.otter</groupId>
-            <artifactId>canal.client</artifactId>
-            <version>${canal.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.alibaba.otter</groupId>
-            <artifactId>canal.protocol</artifactId>
-            <version>${canal.version}</version>
-        </dependency>
     </dependencies>
 
     <build>
-        <finalName>plaza-home</finalName>
+        <finalName>plaza-shop</finalName>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
