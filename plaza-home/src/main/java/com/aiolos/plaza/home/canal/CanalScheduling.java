@@ -188,6 +188,7 @@ public class CanalScheduling implements Runnable {
                         if (shop == null || shop.getId() == null) {
                             continue;
                         }
+                        // 保证同一shopId写入互斥，避免写入ES的同时其他业务修改了shop数据而感知不到
                         String lockKey = SHOP_INDEX_LOCK_KEY_PREFIX + shop.getId();
                         // shop级锁同样启用“重试 + 自动续约”
                         LockHandle lockHandle = acquireLockWithRetryAndRenewal(

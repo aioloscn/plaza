@@ -6,9 +6,9 @@
         <artifactId>plaza</artifactId>
         <version>1.0-SNAPSHOT</version>
     </parent>
-    <artifactId>plaza-shop</artifactId>
-    <name>plaza-shop</name>
-    <version>${plaza-shop.version}</version>
+    <artifactId>plaza-order</artifactId>
+    <name>plaza-order</name>
+    <version>${plaza-order.version}</version>
 
     <dependencies>
         <dependency>
@@ -52,10 +52,19 @@
             <artifactId>mysql-connector-java</artifactId>
             <version>${mysql.version}</version>
         </dependency>
+        <dependency>
+            <groupId>org.springframework.statemachine</groupId>
+            <artifactId>spring-statemachine-starter</artifactId>
+            <version>2.2.3.RELEASE</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-pool2</artifactId>
+        </dependency>
     </dependencies>
 
     <build>
-        <finalName>plaza-shop</finalName>
+        <finalName>plaza-order</finalName>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

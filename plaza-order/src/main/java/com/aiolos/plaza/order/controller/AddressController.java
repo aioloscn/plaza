@@ -1,4 +1,4 @@
-package com.aiolos.plaza.shop.controller;
+package com.aiolos.plaza.order.controller;
 
 import com.aiolos.common.enums.error.ErrorEnum;
 import com.aiolos.common.exception.util.ExceptionUtil;

@@ -1,8 +1,8 @@
 server:
-  port: 9202
+  port: 9204
 
 spring:
   profiles:
     active: dev
   application:
-    name: plaza-shop
+    name: plaza-order
