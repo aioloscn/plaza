@@ -24,6 +24,17 @@ public class CartSaveConsumer {
             log.info("Received cart save message: {}", message);
             
             try {
+                // 判断操作类型
+                if (message.getOperateType() != null && message.getOperateType() == 2) {
+                    // 物理删除购物车商品
+                    cartItemService.lambdaUpdate()
+                            .eq(CartItem::getUserId, message.getUserId())
+                            .eq(CartItem::getProductId, message.getProductId())
+                            .remove();
+                    log.info("Deleted cart item from MySQL, userId:{}, productId:{}", message.getUserId(), message.getProductId());
+                    return;
+                }
+
                 // 检查数据库中是否已存在该商品
                 CartItem existingItem = cartItemService.lambdaQuery().eq(CartItem::getUserId, message.getUserId()).eq(CartItem::getProductId, message.getProductId()).one();
                 

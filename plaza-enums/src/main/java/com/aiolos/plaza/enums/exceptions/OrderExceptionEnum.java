@@ -9,6 +9,12 @@ import lombok.Getter;
 public enum OrderExceptionEnum implements CommonError {
     
     CART_EMPTY(1001, "购物车为空"),
+    PRODUCT_NOT_EXIST(1002, "商品不存在"),
+    STOCK_NOT_ENOUGH(1003, "库存不足"),
+    ADDRESS_NOT_EXIST(1004, "收货地址不存在"),
+    ORDER_NOT_EXIST(1005, "订单不存在"),
+    ORDER_NO_PERMISSION(1006, "无权查看该订单"),
+    ORDER_STOCK_RELEASE_FAIL(1007, "订单取消归还库存失败"),
     ;
     
     private final Integer errCode;

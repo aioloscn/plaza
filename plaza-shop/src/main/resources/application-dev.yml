@@ -12,6 +12,20 @@ spring:
       discovery:
         server-addr: ${config.nacos.host}
         namespace: dev
+    stream:
+      function:
+        definition: productCacheDelete
+      bindings:
+        productCacheDelete-out-0:
+          destination: product-cache-delete-topic
+          content-type: application/json
+        productCacheDelete-in-0:
+          destination: product-cache-delete-topic
+          content-type: application/json
+          group: product-cache-delete-group
+      rocketmq:
+        binder:
+          name-server: ${ROCKETMQ_HOST:127.0.0.1}:9876
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://${MYSQL_HOST:localhost}:3306/plaza?serverTimezone=UTC&useSSL=false&useUnicode=true&characterEncoding=utf-8&allowPublicKeyRetrieval=true

@@ -1,4 +1,4 @@
-package com.aiolos.plaza.cart.vo;
+package com.aiolos.plaza.cart.model.vo;
 
 import lombok.Data;
 import java.io.Serializable;

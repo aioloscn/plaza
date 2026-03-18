@@ -37,6 +37,11 @@ public class Order implements Serializable {
     private String orderSn;
 
     /**
+     * 父订单号（支付单号）
+     */
+    private String parentOrderSn;
+
+    /**
      * 用户ID
      */
     private Long userId;

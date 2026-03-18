@@ -1,11 +1,11 @@
 package com.aiolos.plaza.cart.controller;
 
 import com.aiolos.common.cloud.annotation.AnonymousAuth;
-import com.aiolos.plaza.cart.dto.CartAddReq;
-import com.aiolos.plaza.cart.dto.CartCheckReq;
-import com.aiolos.plaza.cart.dto.CartUpdateReq;
+import com.aiolos.plaza.cart.model.bo.CartAddReq;
+import com.aiolos.plaza.cart.model.bo.CartCheckReq;
+import com.aiolos.plaza.cart.model.bo.CartUpdateReq;
+import com.aiolos.plaza.cart.model.vo.CartListVO;
 import com.aiolos.plaza.cart.service.PlazaCartService;
-import com.aiolos.plaza.cart.vo.CartListVO;
 import com.aiolos.common.model.ContextInfo;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;

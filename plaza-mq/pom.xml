@@ -8,7 +8,7 @@
     </parent>
     <artifactId>plaza-mq</artifactId>
     <name>plaza-mq</name>
-    <version>${plaza-mq.version}</version>
+    <version>1.0-SNAPSHOT</version>
     
     <dependencies>
         <dependency>

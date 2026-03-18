@@ -1,9 +1,9 @@
 package com.aiolos.plaza.cart.service;
 
-import com.aiolos.plaza.cart.dto.CartAddReq;
-import com.aiolos.plaza.cart.dto.CartCheckReq;
-import com.aiolos.plaza.cart.dto.CartUpdateReq;
-import com.aiolos.plaza.cart.vo.CartListVO;
+import com.aiolos.plaza.cart.model.bo.CartAddReq;
+import com.aiolos.plaza.cart.model.bo.CartCheckReq;
+import com.aiolos.plaza.cart.model.bo.CartUpdateReq;
+import com.aiolos.plaza.cart.model.vo.CartListVO;
 
 public interface PlazaCartService {
     

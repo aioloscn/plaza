@@ -3,10 +3,10 @@ package com.aiolos.plaza.order.controller;
 import com.aiolos.common.model.ContextInfo;
 import com.aiolos.common.enums.error.ErrorEnum;
 import com.aiolos.common.exception.util.ExceptionUtil;
-import com.aiolos.plaza.order.dto.OrderSubmitReq;
+import com.aiolos.plaza.order.model.bo.OrderSubmitReq;
 import com.aiolos.plaza.order.service.PlazaOrderService;
 import org.springframework.beans.factory.annotation.Autowired;
-import com.aiolos.plaza.order.vo.OrderListVO;
+import com.aiolos.plaza.order.model.vo.OrderListVO;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -22,12 +22,24 @@ public class OrderController {
      * 提交订单
      */
     @PostMapping("/submit")
-    public Long submit(@RequestBody OrderSubmitReq req) {
+    public String submit(@RequestBody OrderSubmitReq req) {
         Long userId = ContextInfo.getUserId();
         if (userId == null) {
             ExceptionUtil.throwException(ErrorEnum.USER_NOT_LOGGED_IN);
         }
         return plazaOrderService.submit(userId, req);
+    }
+    
+    /**
+     * 根据支付单号获取订单信息
+     */
+    @GetMapping("/payInfo")
+    public OrderListVO getPayInfo(@RequestParam String paySn) {
+        Long userId = ContextInfo.getUserId();
+        if (userId == null) {
+            ExceptionUtil.throwException(ErrorEnum.USER_NOT_LOGGED_IN);
+        }
+        return plazaOrderService.getPayInfo(userId, paySn);
     }
 
     /**

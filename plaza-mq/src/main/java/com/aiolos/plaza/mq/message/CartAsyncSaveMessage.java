@@ -20,4 +20,9 @@ public class CartAsyncSaveMessage implements Serializable {
     private String productName;
     private String productImage;
     private Integer status;
+    
+    /**
+     * 操作类型 1:保存/更新(默认) 2:删除
+     */
+    private Integer operateType = 1;
 }

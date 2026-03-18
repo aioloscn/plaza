@@ -1,4 +1,4 @@
-package com.aiolos.plaza.cart.dto;
+package com.aiolos.plaza.cart.model.bo;
 
 import lombok.Data;
 import java.io.Serializable;

@@ -12,9 +12,43 @@ spring:
       discovery:
         server-addr: ${config.nacos.host}
         namespace: dev
+    stream:
+      function:
+        definition: orderTimeout;stockDeduct;cartSave
+      bindings:
+        orderTimeout-out-0:
+          destination: order-timeout-topic
+          content-type: application/json
+        orderTimeout-in-0:
+          destination: order-timeout-topic
+          group: order-timeout-group
+          content-type: application/json
+          consumer:
+            max-attempts: 3 # 最大重试次数
+            back-off-initial-interval: 1000 # 初始重试间隔 1s
+            back-off-multiplier: 2.0 # 重试间隔倍数
+            back-off-max-interval: 10000 # 最大重试间隔 10s
+        stockDeduct-out-0:
+          destination: stock-deduct-topic
+          content-type: application/json
+        stockDeduct-in-0:
+          destination: stock-deduct-topic
+          group: stock-deduct-group
+          content-type: application/json
+          consumer:
+            max-attempts: 3
+            back-off-initial-interval: 1000
+            back-off-multiplier: 2.0
+            back-off-max-interval: 10000
+        cartSave-out-0:
+          destination: cart-save-topic
+          content-type: application/json
+      rocketmq:
+        binder:
+          name-server: ${ROCKETMQ_HOST:127.0.0.1}:9876
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://${MYSQL_HOST:localhost}:3306/plaza?serverTimezone=UTC&useSSL=false&useUnicode=true&characterEncoding=utf-8&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:3306/plaza?serverTimezone=Asia/Shanghai&useSSL=false&useUnicode=true&characterEncoding=utf-8&allowPublicKeyRetrieval=true
     username: root
     password: root
   data:
@@ -37,6 +71,19 @@ spring:
             max-active: 10
             max-idle: 5
             min-idle: 1
+
+xxl:
+  job:
+    admin:
+      addresses: http://127.0.0.1:18081/xxl-job-admin
+    accessToken: default_token
+    executor:
+      appname: plaza-order-executor
+      address:
+      ip:
+      port: 19999
+      logpath: /data/applogs/xxl-job/jobhandler
+      logretentiondays: 30
 
 mybatis-plus:
   configuration:

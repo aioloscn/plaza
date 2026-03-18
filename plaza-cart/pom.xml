@@ -8,7 +8,7 @@
     </parent>
     <artifactId>plaza-cart</artifactId>
     <name>plaza-cart</name>
-    <version>${plaza-cart.version}</version>
+    <version>1.0-SNAPSHOT</version>
 
     <dependencies>
         <dependency>

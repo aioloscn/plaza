@@ -1,4 +1,4 @@
-package com.aiolos.plaza.order.vo;
+package com.aiolos.plaza.order.model.vo;
 
 import lombok.Data;
 import java.io.Serializable;

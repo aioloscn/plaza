@@ -23,4 +23,11 @@ public interface ShopProductService {
      * @return
      */
     ProductVO getById(Long id);
+
+    /**
+     * 更新商品信息（包含缓存双删逻辑）
+     * @param product
+     * @return
+     */
+    boolean updateProduct(Product product);
 }

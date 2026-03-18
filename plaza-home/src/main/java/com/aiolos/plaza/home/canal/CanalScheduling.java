@@ -14,6 +14,7 @@ import org.elasticsearch.client.Request;
 import org.elasticsearch.client.Response;
 import org.elasticsearch.client.RestClient;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
@@ -66,7 +67,8 @@ public class CanalScheduling implements Runnable {
     @Resource
     private StringRedisTemplate stringRedisTemplate;
     
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    @Autowired
+    private ObjectMapper objectMapper;
     // 锁行为计数器（便于观察稳定性与冲突情况）
     private final AtomicLong runLockAcquireSuccessCount = new AtomicLong();
     private final AtomicLong runLockAcquireFailCount = new AtomicLong();

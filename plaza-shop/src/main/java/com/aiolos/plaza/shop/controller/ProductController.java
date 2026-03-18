@@ -1,6 +1,7 @@
 package com.aiolos.plaza.shop.controller;
 
 import com.aiolos.common.cloud.annotation.IgnoreAuth;
+import com.aiolos.plaza.model.po.Product;
 import com.aiolos.plaza.shop.model.vo.ProductVO;
 import com.aiolos.plaza.shop.service.ShopProductService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -30,5 +31,11 @@ public class ProductController {
     @Operation(summary = "根据ID查询商品详情")
     public ProductVO detail(@PathVariable("id") Long id) {
         return shopProductService.getById(id);
+    }
+
+    @PostMapping("/update")
+    @Operation(summary = "更新商品信息（包含缓存双删逻辑）")
+    public boolean updateProduct(@RequestBody Product product) {
+        return shopProductService.updateProduct(product);
     }
 }
