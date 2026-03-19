@@ -30,4 +30,10 @@ public interface HomeShopService {
      * @return
      */
     RecommendShopVO detail(Long id);
+
+    /**
+     * 将店铺ID添加到布隆过滤器中
+     * @param id 店铺ID
+     */
+    void addShopToBloomFilter(Long id);
 }

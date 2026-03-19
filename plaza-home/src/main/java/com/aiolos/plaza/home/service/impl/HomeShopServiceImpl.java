@@ -14,6 +14,8 @@ import com.aiolos.plaza.home.service.HomeShopService;
 import com.aiolos.plaza.mapper.ShopMapper;
 import com.aiolos.plaza.model.po.Shop;
 import com.aiolos.plaza.service.ShopService;
+import com.alibaba.google.common.hash.BloomFilter;
+import com.alibaba.google.common.hash.Funnels;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -23,8 +25,10 @@ import org.apache.commons.lang3.StringUtils;
 import org.elasticsearch.client.Request;
 import org.elasticsearch.client.Response;
 import org.elasticsearch.client.RestClient;
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.*;
@@ -33,13 +37,26 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 @AllArgsConstructor
-public class HomeShopServiceImpl implements HomeShopService {
+public class HomeShopServiceImpl implements HomeShopService, InitializingBean {
     
     private final ShopService shopService;
     private final ShopMapper shopMapper;
     private final RestClient restClient;
-    @Autowired
-    private ObjectMapper objectMapper;
+    private final ObjectMapper objectMapper;
+    private final BloomFilter<Long> homeBloomFilter;
+
+    @Override
+    public void afterPropertiesSet() throws Exception {
+        
+        // 系统启动时，将所有存在的店铺ID加载到布隆过滤器中
+        List<Shop> list = shopService.lambdaQuery().select(Shop::getId).list();
+        if (CollectionUtil.isNotEmpty(list)) {
+            for (Shop shop : list) {
+                homeBloomFilter.put(shop.getId());
+            }
+        }
+        log.info("店铺布隆过滤器初始化完成，共加载了 {} 个店铺ID", list == null ? 0 : list.size());
+    }
 
     @Override
     public PageResult<RecommendShopVO> recommend(PageModel<RecommendShopBO> model) {
@@ -199,7 +216,24 @@ public class HomeShopServiceImpl implements HomeShopService {
 
     @Override
     public RecommendShopVO detail(Long id) {
-        return ConvertBeanUtil.convert(shopService.lambdaQuery().eq(Shop::getId, id).one(), RecommendShopVO.class);
+        // 先经过布隆过滤器判断，如果判断不在，那一定不在（拦截恶意或无效查询）
+        if (!homeBloomFilter.mightContain(id)) {
+            log.warn("店铺详情查询被布隆过滤器拦截，店铺不存在，ID: {}", id);
+            return null; // 或者抛出业务异常
+        }
+        
+        Shop shop = shopService.lambdaQuery().eq(Shop::getId, id).one();
+        if (shop == null) {
+            return null;
+        }
+        return ConvertBeanUtil.convert(shop, RecommendShopVO.class);
+    }
+    
+    @Override
+    public void addShopToBloomFilter(Long id) {
+        if (id != null && homeBloomFilter != null) {
+            homeBloomFilter.put(id);
+        }
     }
     
     /**

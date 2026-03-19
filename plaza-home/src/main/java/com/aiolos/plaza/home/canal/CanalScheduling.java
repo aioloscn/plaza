@@ -7,6 +7,7 @@ import com.alibaba.otter.canal.protocol.Message;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.aiolos.plaza.dto.ShopDTO;
+import com.aiolos.plaza.home.service.HomeShopService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -69,6 +70,9 @@ public class CanalScheduling implements Runnable {
     
     @Autowired
     private ObjectMapper objectMapper;
+    @Autowired
+    private HomeShopService homeShopService;
+    
     // 锁行为计数器（便于观察稳定性与冲突情况）
     private final AtomicLong runLockAcquireSuccessCount = new AtomicLong();
     private final AtomicLong runLockAcquireFailCount = new AtomicLong();
@@ -210,7 +214,11 @@ public class CanalScheduling implements Runnable {
                     }
                     if (!shopsToIndex.isEmpty()) {
                         bulkIndexToES(shopsToIndex);
-                        log.info("成功同步{}条shop数据到ES", shopsToIndex.size());
+                        // 将新增或更新的shop同步添加到布隆过滤器
+                        for (ShopDTO s : shopsToIndex) {
+                            homeShopService.addShopToBloomFilter(s.getId());
+                        }
+                        log.info("成功同步{}条shop数据到ES，并更新布隆过滤器", shopsToIndex.size());
                     }
                 } finally {
                     acquiredShopLocks.forEach(this::releaseLock);

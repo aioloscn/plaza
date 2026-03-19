@@ -98,7 +98,7 @@ alipay:
 xxl:
   job:
     admin:
-      addresses: http://127.0.0.1:18081/xxl-job-admin
+      addresses: http://127.0.0.1:18089/xxl-job-admin
     accessToken: default_token
     executor:
       appname: plaza-order-executor
