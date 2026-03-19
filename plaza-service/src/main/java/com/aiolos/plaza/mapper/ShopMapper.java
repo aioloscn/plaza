@@ -2,7 +2,7 @@ package com.aiolos.plaza.mapper;
 
 import com.aiolos.plaza.model.po.Shop;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import dto.ShopDTO;
+import com.aiolos.plaza.dto.ShopDTO;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 

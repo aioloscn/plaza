@@ -45,4 +45,21 @@ public interface PlazaOrderService {
      * @param orderId 订单ID
      */
     void cancelOrder(Long orderId);
+    /**
+     * 支付
+     *
+     * @param userId  用户ID
+     * @param orderSn 订单号
+     * @param payType 支付方式
+     * @return 支付表单HTML
+     */
+    String pay(Long userId, String orderSn, Integer payType, boolean isMobile);
+
+    /**
+     * 支付回调处理
+     *
+     * @param params 支付宝回调参数
+     * @return success/fail
+     */
+    String payNotify(java.util.Map<String, String> params);
 }

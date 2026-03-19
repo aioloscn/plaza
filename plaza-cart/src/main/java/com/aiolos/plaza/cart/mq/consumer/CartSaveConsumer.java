@@ -7,6 +7,7 @@ import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.context.annotation.Bean;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.function.Consumer;
@@ -18,6 +19,9 @@ public class CartSaveConsumer {
     @Resource
     private CartItemService cartItemService;
 
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
+
     @Bean
     public Consumer<CartAsyncSaveMessage> cartSave() {
         return message -> {
@@ -26,12 +30,17 @@ public class CartSaveConsumer {
             try {
                 // 判断操作类型
                 if (message.getOperateType() != null && message.getOperateType() == 2) {
-                    // 物理删除购物车商品
+                    // 1. 物理删除购物车数据库记录
                     cartItemService.lambdaUpdate()
                             .eq(CartItem::getUserId, message.getUserId())
                             .eq(CartItem::getProductId, message.getProductId())
                             .remove();
-                    log.info("Deleted cart item from MySQL, userId:{}, productId:{}", message.getUserId(), message.getProductId());
+                    
+                    // 2. 物理删除 Redis 缓存（防止并发回源导致的脏数据复活）
+                    String cartKey = "cart:user:" + message.getUserId();
+                    stringRedisTemplate.delete(cartKey);
+                    
+                    log.info("Deleted cart item from MySQL and Redis, userId:{}, productId:{}", message.getUserId(), message.getProductId());
                     return;
                 }
 

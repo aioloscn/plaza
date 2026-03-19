@@ -11,6 +11,18 @@ import com.aiolos.plaza.mapper.ParentOrderMapper;
 import com.aiolos.plaza.model.po.Address;
 import com.aiolos.plaza.model.po.CartItem;
 import com.aiolos.plaza.mq.message.CartAsyncSaveMessage;
+import com.aiolos.plaza.mq.constant.CartMqConstants;
+import com.aiolos.plaza.mq.constant.OrderMqConstants;
+import com.aiolos.plaza.order.config.AlipayConfig;
+import com.aiolos.plaza.model.po.MqLocalMessage;
+import com.aiolos.plaza.service.MqLocalMessageService;
+import com.alipay.api.AlipayClient;
+import com.alipay.api.DefaultAlipayClient;
+import com.alipay.api.domain.AlipayTradePagePayModel;
+import com.alipay.api.domain.AlipayTradeWapPayModel;
+import com.alipay.api.internal.util.AlipaySignature;
+import com.alipay.api.request.AlipayTradePagePayRequest;
+import com.alipay.api.request.AlipayTradeWapPayRequest;
 import com.aiolos.plaza.order.model.dto.CartItemDTO;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.aiolos.plaza.model.po.Order;
@@ -94,6 +106,12 @@ public class PlazaOrderServiceImpl implements PlazaOrderService {
     @Resource
     private OrderMessageProducer orderMessageProducer;
 
+    @Autowired
+    private MqLocalMessageService mqLocalMessageService;
+
+    @Autowired
+    private AlipayConfig alipayConfig;
+
     private DefaultRedisScript<Long> stockDeductScript;
 
     @Autowired
@@ -175,7 +193,7 @@ public class PlazaOrderServiceImpl implements PlazaOrderService {
                 .collect(Collectors.groupingBy(CartItem::getShopId));
 
         // 4. 生成父订单号
-        String parentOrderSn = generateOrderSn(); // 复用生成规则
+        String parentOrderSn = generateOrderSn("P"); // 复用生成规则
 
         List<StockDeductMessage> stockDeductMessages = new ArrayList<>();
         List<Long> allCartIds = new ArrayList<>();
@@ -189,7 +207,7 @@ public class PlazaOrderServiceImpl implements PlazaOrderService {
             List<CartItem> shopItems = entry.getValue();
 
             // 生成子订单号
-            String orderSn = generateOrderSn();
+            String orderSn = generateOrderSn("D");
             
             BigDecimal totalAmount = BigDecimal.ZERO;
 
@@ -300,7 +318,8 @@ public class PlazaOrderServiceImpl implements PlazaOrderService {
         parentOrder.setUpdateTime(LocalDateTime.now());
         parentOrderMapper.insert(parentOrder);
 
-        // 6. 清除购物车
+        // 6. 物理清除订单服务本地的 MySQL 购物车记录
+        // MQ 消费端的删除会变成一次幂等操作（如果已经删了，MyBatisPlus 的 remove 也不会报错）。
         if (!allCartIds.isEmpty()) {
             cartItemMapper.deleteBatchIds(allCartIds);
         }
@@ -311,27 +330,59 @@ public class PlazaOrderServiceImpl implements PlazaOrderService {
                 .map(item -> String.valueOf(item.getProductId()))
                 .toArray();
             cartRedisTemplate.boundHashOps(cartKey).delete(productIds);
+            
+            // 检查购物车是否已空，如果为空则设置短期标记阻止并发回源
+            Long size = cartRedisTemplate.boundHashOps(cartKey).size();
+            if (size == null || size == 0) {
+                String emptyMarkKey = "cart:empty_mark:user:" + userId;
+                cartRedisTemplate.opsForValue().set(emptyMarkKey, "1", 60, java.util.concurrent.TimeUnit.SECONDS);
+            }
         } catch (Exception e) {
             log.error("清除Redis购物车缓存失败: userId={}", userId, e);
         }
 
-        // 7. 异步发送 MQ 消息去扣减数据库库存
+        // 7. 写入本地消息表（Outbox模式），异步发送 MQ 消息去扣减数据库库存
+        List<MqLocalMessage> localMessages = new ArrayList<>();
         for (StockDeductMessage msg : stockDeductMessages) {
-            orderMessageProducer.sendStockDeductMessage(msg);
+            MqLocalMessage localMsg = new MqLocalMessage();
+            localMsg.setTopic(OrderMqConstants.BINDING_STOCK_DEDUCT_OUT);
+            localMsg.setContent(JSON.toJSONString(msg));
+            localMsg.setState(0); // 0:新建
+            localMsg.setRetryCount(0);
+            localMsg.setBusinessKey(msg.getOrderSn());
+            localMsg.setCreateTime(LocalDateTime.now());
+            localMsg.setUpdateTime(LocalDateTime.now());
+            localMessages.add(localMsg);
         }
 
-        // 7.1 发送异步消息清除购物车 MySQL 数据（防幽灵数据）
+        // 7.1 写入本地消息表（Outbox模式），发送异步消息清除购物车 MySQL 数据（防幽灵数据）
         if (!allCartIds.isEmpty()) {
             for (CartItem item : cartItems) {
                 CartAsyncSaveMessage cartMsg = new CartAsyncSaveMessage();
                 cartMsg.setUserId(userId);
                 cartMsg.setProductId(item.getProductId());
                 cartMsg.setOperateType(2); // 2: 删除
-                orderMessageProducer.sendCartSaveMessage(cartMsg);
+                
+                MqLocalMessage localMsg = new MqLocalMessage();
+                localMsg.setTopic(CartMqConstants.BINDING_CART_SAVE_OUT);
+                localMsg.setContent(JSON.toJSONString(cartMsg));
+                localMsg.setState(0); // 0:新建
+                localMsg.setRetryCount(0);
+                localMsg.setBusinessKey(String.valueOf(userId));
+                localMsg.setCreateTime(LocalDateTime.now());
+                localMsg.setUpdateTime(LocalDateTime.now());
+                localMessages.add(localMsg);
             }
         }
+        
+        // 批量保存本地消息
+        if (!localMessages.isEmpty()) {
+            mqLocalMessageService.saveBatch(localMessages);
+        }
 
-        // 8. 发送延迟消息
+        // 8. 发送延迟消息（这个可以允许直接发送，因为延迟消息本身就是异步的且对一致性要求稍低，或者也可以改为本地消息表，这里先保持原样，或者也改为本地消息表）
+        // 考虑到延迟消息是 RocketMQ 的特性，本地消息表重发时也需要支持延迟发送，这里为了简单起见，延迟消息暂时不改，因为如果事务回滚了，延迟消息发出去也就是多了一个无效检查而已，影响不大。
+        // 但为了严谨，也可以纳入。不过这里只改前两个关键的。
         for (Long orderId : orderIds) {
             orderMessageProducer.sendOrderTimeoutMessage(orderId, 14);
         }
@@ -365,7 +416,8 @@ public class PlazaOrderServiceImpl implements PlazaOrderService {
         
         OrderListVO vo = new OrderListVO();
         BeanUtils.copyProperties(mainOrder, vo);
-        // 使用父订单金额
+        // 使用父订单金额和编号
+        vo.setParentOrderSn(parentOrder.getParentOrderSn());
         vo.setPayAmount(parentOrder.getPayAmount());
         vo.setTotalAmount(parentOrder.getTotalAmount());
         
@@ -607,12 +659,187 @@ public class PlazaOrderServiceImpl implements PlazaOrderService {
         log.info("延迟消息触发未支付订单取消成功，订单号: {}", order.getOrderSn());
     }
 
+    @Override
+    public String pay(Long userId, String orderSn, Integer payType, boolean isMobile) {
+        // 1. 查询订单
+        // 根据业务逻辑，如果是合并支付，应该是 parentOrderSn
+        ParentOrder parentOrder = parentOrderMapper.selectOne(new LambdaQueryWrapper<ParentOrder>()
+                .eq(ParentOrder::getParentOrderSn, orderSn)
+                .eq(ParentOrder::getUserId, userId));
+
+        if (parentOrder == null) {
+            ExceptionUtil.throwException(OrderExceptionEnum.ORDER_NOT_EXIST);
+        }
+
+        // 2. 校验状态
+        if (!OrderState.CREATED.getCode().equals(parentOrder.getStatus())) {
+            ExceptionUtil.throwException(OrderExceptionEnum.ORDER_STATUS_ERROR);
+        }
+
+        // 3. 调用支付宝 SDK 生成支付表单
+        try {
+            AlipayClient alipayClient = new DefaultAlipayClient(
+                    alipayConfig.getGatewayUrl(),
+                    alipayConfig.getAppId(),
+                    alipayConfig.getMerchantPrivateKey(),
+                    alipayConfig.getFormat(),
+                    alipayConfig.getCharset(),
+                    alipayConfig.getAlipayPublicKey(),
+                    alipayConfig.getSignType());
+
+            if (isMobile) {
+                AlipayTradeWapPayRequest request = new AlipayTradeWapPayRequest();
+                AlipayTradeWapPayModel model = new AlipayTradeWapPayModel();
+                model.setOutTradeNo(orderSn);
+                model.setSubject("Plaza商城订单-" + orderSn);
+                model.setTotalAmount(parentOrder.getPayAmount().toString());
+                model.setBody("Plaza商城订单支付");
+                model.setProductCode("QUICK_WAP_WAY");
+                request.setBizModel(model);
+                request.setNotifyUrl(alipayConfig.getNotifyUrl());
+                request.setReturnUrl(alipayConfig.getReturnUrl());
+                return alipayClient.pageExecute(request).getBody();
+            } else {
+                AlipayTradePagePayRequest request = new AlipayTradePagePayRequest();
+                AlipayTradePagePayModel model = new AlipayTradePagePayModel();
+                model.setOutTradeNo(orderSn);
+                model.setSubject("Plaza商城订单-" + orderSn);
+                model.setTotalAmount(parentOrder.getPayAmount().toString());
+                model.setBody("Plaza商城订单支付");
+                model.setProductCode("FAST_INSTANT_TRADE_PAY");
+                request.setBizModel(model);
+                request.setNotifyUrl(alipayConfig.getNotifyUrl());
+                request.setReturnUrl(alipayConfig.getReturnUrl());
+                return alipayClient.pageExecute(request).getBody();
+            }
+        } catch (Exception e) {
+            log.error("生成支付表单失败", e);
+            ExceptionUtil.throwException(OrderExceptionEnum.CREATE_PAY_FORM_FAIL);
+        }
+        return null;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public String payNotify(Map<String, String> params) {
+        log.info("收到支付宝回调通知: {}", params);
+        try {
+            // 1. 验签 (跳过 AppID 校验，因为沙箱环境可能不一致，或者需要配置)
+            // 在生产环境必须开启
+            boolean signVerified = true; 
+            try {
+                signVerified = AlipaySignature.rsaCheckV1(
+                    params,
+                    alipayConfig.getAlipayPublicKey(),
+                    alipayConfig.getCharset(),
+                    alipayConfig.getSignType());
+            } catch (Exception e) {
+                log.error("支付宝验签异常", e);
+                return "fail";
+            }
+
+            if (!signVerified) {
+                log.error("支付宝回调验签失败");
+                return "fail";
+            }
+
+            // 2. 校验参数
+            String outTradeNo = params.get("out_trade_no");
+            String tradeStatus = params.get("trade_status");
+            String totalAmount = params.get("total_amount");
+            String appId = params.get("app_id");
+
+            if (!alipayConfig.getAppId().equals(appId)) {
+                log.error("支付宝回调AppID不匹配");
+                return "fail";
+            }
+
+            if (!"TRADE_SUCCESS".equals(tradeStatus) && !"TRADE_FINISHED".equals(tradeStatus)) {
+                return "success"; // 状态不对也返回 success 防止支付宝重试，因为我们只处理成功
+            }
+
+            // 3. 查询订单
+            ParentOrder parentOrder = parentOrderMapper.selectOne(new LambdaQueryWrapper<ParentOrder>()
+                    .eq(ParentOrder::getParentOrderSn, outTradeNo));
+
+            if (parentOrder == null) {
+                log.error("支付宝回调订单不存在: {}", outTradeNo);
+                return "fail";
+            }
+
+            // 4. 校验金额 (注意 BigDecimal 比较)
+            if (parentOrder.getPayAmount().compareTo(new BigDecimal(totalAmount)) != 0) {
+                log.error("支付宝回调金额不匹配: 订单金额={}, 回调金额={}", parentOrder.getPayAmount(), totalAmount);
+                return "fail";
+            }
+
+            // 5. 幂等处理：如果订单已经是支付状态，直接返回 success
+            if (OrderState.PAID.getCode().equals(parentOrder.getStatus()) || 
+                OrderState.DELIVERED.getCode().equals(parentOrder.getStatus()) ||
+                OrderState.COMPLETED.getCode().equals(parentOrder.getStatus())) {
+                log.info("订单已支付，忽略回调: {}", outTradeNo);
+                return "success";
+            }
+
+            // 6. 更新父订单状态
+            parentOrder.setStatus(OrderState.PAID.getCode());
+            parentOrder.setPaymentTime(LocalDateTime.now()); // 更新支付时间
+            parentOrder.setTradeNo(params.get("trade_no")); // 记录第三方流水号
+            parentOrder.setBuyerId(params.get("buyer_id")); // 记录买家账号
+            parentOrder.setUpdateTime(LocalDateTime.now());
+            parentOrderMapper.updateById(parentOrder);
+
+            // 7. 更新子订单状态（使用状态机处理，确保业务流程完整性）
+            List<Order> childOrders = orderMapper.selectList(new LambdaQueryWrapper<Order>()
+                    .eq(Order::getParentOrderSn, outTradeNo));
+            
+            for (Order child : childOrders) {
+                // 仅处理待支付状态的订单
+                if (OrderState.CREATED.getCode().equals(child.getStatus())) {
+                    // 获取对应订单的状态机
+                    StateMachine<OrderState, OrderEvent> stateMachine = orderStateMachineFactory.getStateMachine(child.getId().toString());
+                    // 配置状态机拦截器，用于持久化状态变更
+                    stateMachine.getStateMachineAccessor().doWithAllRegions(access -> access.addStateMachineInterceptor(orderStateChangeInterceptor));
+                    stateMachine.start();
+                    
+                    // 构建支付事件消息
+                    Message<OrderEvent> message = MessageBuilder.withPayload(OrderEvent.PAY)
+                            .setHeader("orderId", child.getId())
+                            .setHeader("paymentTime", parentOrder.getPaymentTime()) // 传递支付时间
+                            .build();
+                    
+                    // 发送事件，状态机自动处理状态流转和后续动作
+                    boolean accepted = stateMachine.sendEvent(message);
+                    if (!accepted) {
+                        log.warn("订单状态机拒绝支付事件，订单ID: {}, 当前状态: {}", child.getId(), child.getStatus());
+                    }
+                }
+            }
+
+            // 8. 写入本地消息表 (Outbox)，通知下游
+            MqLocalMessage localMsg = new MqLocalMessage();
+            localMsg.setTopic(OrderMqConstants.BINDING_ORDER_PAID_OUT);
+            localMsg.setContent(JSON.toJSONString(parentOrder));
+            localMsg.setState(0);
+            localMsg.setBusinessKey(outTradeNo);
+            localMsg.setCreateTime(LocalDateTime.now());
+            localMsg.setUpdateTime(LocalDateTime.now());
+            mqLocalMessageService.save(localMsg);
+
+            return "success";
+        } catch (Exception e) {
+            log.error("支付宝回调处理异常", e);
+            return "fail";
+        }
+    }
+
     /**
      * 生成订单号：时间戳 + 随机数
+     * @param prefix 订单号前缀（如：P-父订单，D-子订单）
      */
-    private String generateOrderSn() {
+    private String generateOrderSn(String prefix) {
         String dateStr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS"));
         int random = (int) (Math.random() * 9000 + 1000);
-        return dateStr + random;
+        return prefix + dateStr + random;
     }
 }

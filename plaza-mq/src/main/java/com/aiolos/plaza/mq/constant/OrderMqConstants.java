@@ -16,4 +16,10 @@ public class OrderMqConstants {
      * 对应 application.yml 中的 spring.cloud.stream.bindings.orderTimeout-out-0
      */
     public static final String BINDING_ORDER_TIMEOUT_OUT = "orderTimeout-out-0";
+
+    /**
+     * 订单支付成功 Binding Name (Output)
+     * 对应 application.yml 中的 spring.cloud.stream.bindings.orderPaid-out-0
+     */
+    public static final String BINDING_ORDER_PAID_OUT = "orderPaid-out-0";
 }

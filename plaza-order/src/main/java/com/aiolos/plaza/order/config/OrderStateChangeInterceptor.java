@@ -36,6 +36,13 @@ public class OrderStateChangeInterceptor extends StateMachineInterceptorAdapter<
                         Order order = orderMapper.selectById(orderId);
                         if (order != null) {
                             order.setStatus(state.getId().getCode());
+                            
+                            // 检查并设置支付时间（如果事件中传递了）
+                            if (message.getHeaders().containsKey("paymentTime")) {
+                                java.time.LocalDateTime paymentTime = (java.time.LocalDateTime) message.getHeaders().get("paymentTime");
+                                order.setPaymentTime(paymentTime);
+                            }
+                            
                             orderMapper.updateById(order);
                             
                             // 同步更新父订单状态

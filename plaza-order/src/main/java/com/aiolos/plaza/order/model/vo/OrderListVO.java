@@ -12,6 +12,8 @@ public class OrderListVO implements Serializable {
     private Long id;
     @Schema(description = "订单号")
     private String orderSn;
+    @Schema(description = "父订单号")
+    private String parentOrderSn;
     private Long shopId;
     private String shopName; // 需要关联店铺表
     private BigDecimal totalAmount;

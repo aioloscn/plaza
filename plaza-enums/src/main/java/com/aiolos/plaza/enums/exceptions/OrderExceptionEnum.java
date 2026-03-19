@@ -15,6 +15,8 @@ public enum OrderExceptionEnum implements CommonError {
     ORDER_NOT_EXIST(1005, "订单不存在"),
     ORDER_NO_PERMISSION(1006, "无权查看该订单"),
     ORDER_STOCK_RELEASE_FAIL(1007, "订单取消归还库存失败"),
+    ORDER_STATUS_ERROR(1008, "订单状态错误"),
+    CREATE_PAY_FORM_FAIL(1009, "生成支付表单失败"),
     ;
     
     private final Integer errCode;

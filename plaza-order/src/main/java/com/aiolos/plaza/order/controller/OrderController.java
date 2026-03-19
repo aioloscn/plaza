@@ -1,5 +1,6 @@
 package com.aiolos.plaza.order.controller;
 
+import com.aiolos.common.cloud.annotation.IgnoreAuth;
 import com.aiolos.common.model.ContextInfo;
 import com.aiolos.common.enums.error.ErrorEnum;
 import com.aiolos.common.exception.util.ExceptionUtil;
@@ -30,6 +31,34 @@ public class OrderController {
         return plazaOrderService.submit(userId, req);
     }
     
+    /**
+     * 发起支付
+     */
+    @PostMapping("/pay")
+    public String pay(@RequestParam String orderSn, @RequestParam(defaultValue = "1") Integer payType, jakarta.servlet.http.HttpServletRequest request) {
+        Long userId = ContextInfo.getUserId();
+        if (userId == null) {
+            ExceptionUtil.throwException(ErrorEnum.USER_NOT_LOGGED_IN);
+        }
+        String ua = request.getHeader("User-Agent");
+        boolean isMobile = false;
+        if (ua != null) {
+            ua = ua.toLowerCase();
+            isMobile = ua.contains("mobile") || ua.contains("android") || ua.contains("iphone");
+        }
+        return plazaOrderService.pay(userId, orderSn, payType, isMobile);
+    }
+
+    /**
+     * 支付回调 (支付宝)
+     * 注意：这里不能校验登录态，因为是支付宝服务器调用的
+     */
+    @PostMapping("/pay/notify")
+    @IgnoreAuth
+    public String payNotify(@RequestParam java.util.Map<String, String> params) {
+        return plazaOrderService.payNotify(params);
+    }
+
     /**
      * 根据支付单号获取订单信息
      */

@@ -12,16 +12,13 @@ import java.time.LocalDateTime;
 
 /**
  * <p>
- * 父订单表
+ * 支付流水日志表
  * </p>
- *
- * @author aiolos
- * @since 2026-03-18
  */
 @Data
 @EqualsAndHashCode(callSuper = false)
-@TableName("parent_order")
-public class ParentOrder implements Serializable {
+@TableName("payment_log")
+public class PaymentLog implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
@@ -32,29 +29,9 @@ public class ParentOrder implements Serializable {
     private Long id;
 
     /**
-     * 父订单编号（支付单号）
+     * 订单号(父订单号)
      */
-    private String parentOrderSn;
-
-    /**
-     * 用户ID
-     */
-    private Long userId;
-
-    /**
-     * 总金额
-     */
-    private BigDecimal totalAmount;
-
-    /**
-     * 应付总金额
-     */
-    private BigDecimal payAmount;
-
-    /**
-     * 订单状态：0->待付款；1->待发货；2->已发货；3->已完成；4->已关闭；5->无效订单
-     */
-    private Integer status;
+    private String orderSn;
 
     /**
      * 支付方式：1->支付宝；2->微信
@@ -67,28 +44,23 @@ public class ParentOrder implements Serializable {
     private String tradeNo;
 
     /**
+     * 支付金额
+     */
+    private BigDecimal totalAmount;
+
+    /**
      * 买家在支付平台的账号/ID
      */
     private String buyerId;
 
     /**
-     * 支付时间
+     * 支付成功时间
      */
     private LocalDateTime paymentTime;
-
-    /**
-     * 删除状态：0->未删除；1->已删除
-     */
-    private Integer deleteStatus;
 
     /**
      * 创建时间
      */
     private LocalDateTime createTime;
-
-    /**
-     * 更新时间
-     */
-    private LocalDateTime updateTime;
 
 }
