@@ -30,4 +30,10 @@ public interface ShopProductService {
      * @return
      */
     boolean updateProduct(Product product);
+
+    /**
+     * 清理本地商品缓存
+     * @param id 商品ID
+     */
+    void clearLocalCache(Long id);
 }

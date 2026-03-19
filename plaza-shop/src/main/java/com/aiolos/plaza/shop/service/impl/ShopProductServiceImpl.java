@@ -10,6 +10,8 @@ import com.aiolos.plaza.shop.service.ShopProductService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -40,6 +42,13 @@ public class ShopProductServiceImpl implements ShopProductService {
     @Autowired
     private ObjectMapper objectMapper;
 
+    // 本地缓存 Caffeine (L1 缓存)
+    private final Cache<Long, ProductVO> localProductCache = Caffeine.newBuilder()
+            .initialCapacity(100)
+            .maximumSize(2000)
+            .expireAfterWrite(10, TimeUnit.MINUTES) // 10分钟过期，配合Redis(L2)和MQ清理使用
+            .build();
+
     @Override
     public List<ProductVO> listByShopId(Long shopId) {
         List<Product> productList = productService.list(new QueryWrapper<Product>()
@@ -60,17 +69,35 @@ public class ShopProductServiceImpl implements ShopProductService {
             }
         }
         
-        return ConvertBeanUtil.convertList(productList, ProductVO.class);
+        List<ProductVO> voList = ConvertBeanUtil.convertList(productList, ProductVO.class);
+        
+        // 顺便写入本地缓存
+        if (voList != null) {
+            for (ProductVO vo : voList) {
+                localProductCache.put(vo.getId(), vo);
+            }
+        }
+        
+        return voList;
     }
 
     @Override
     public ProductVO getById(Long id) {
-        // 1. 先查 Redis
+        // 0. 先查本地缓存 Caffeine (L1)
+        ProductVO localProduct = localProductCache.getIfPresent(id);
+        if (localProduct != null) {
+            return localProduct;
+        }
+
+        // 1. 本地缓存未命中，查 Redis (L2)
         String productJson = stringRedisTemplate.opsForValue().get(PRODUCT_INFO_PREFIX + id);
         if (productJson != null) {
             try {
                 Product product = objectMapper.readValue(productJson, Product.class);
-                return ConvertBeanUtil.convert(product, ProductVO.class);
+                ProductVO productVO = ConvertBeanUtil.convert(product, ProductVO.class);
+                // 回写本地缓存
+                localProductCache.put(id, productVO);
+                return productVO;
             } catch (JsonProcessingException e) {
                 log.error("反序列化商品信息失败，商品ID: {}", id, e);
                 // 如果反序列化失败，则继续查数据库
@@ -88,6 +115,11 @@ public class ShopProductServiceImpl implements ShopProductService {
                 // 初始化库存缓存
                 stringRedisTemplate.opsForValue().setIfAbsent(PRODUCT_STOCK_PREFIX + product.getId(), 
                         String.valueOf(product.getStock()));
+                        
+                // 回写本地缓存
+                ProductVO productVO = ConvertBeanUtil.convert(product, ProductVO.class);
+                localProductCache.put(id, productVO);
+                return productVO;
             } catch (JsonProcessingException e) {
                 log.error("缓存商品信息失败，商品ID: {}", product.getId(), e);
             }
@@ -103,7 +135,10 @@ public class ShopProductServiceImpl implements ShopProductService {
         
         Long productId = product.getId();
         
-        // 1. 第一次删除缓存
+        // 0. 第一次清理本地缓存 L1
+        localProductCache.invalidate(productId);
+        
+        // 1. 第一次删除缓存 L2
         try {
             stringRedisTemplate.delete(PRODUCT_INFO_PREFIX + productId);
             stringRedisTemplate.delete(PRODUCT_STOCK_PREFIX + productId);
@@ -121,5 +156,13 @@ public class ShopProductServiceImpl implements ShopProductService {
         }
         
         return updateResult;
+    }
+
+    @Override
+    public void clearLocalCache(Long id) {
+        if (id != null) {
+            localProductCache.invalidate(id);
+            log.info("本地商品缓存 L1 清理成功，商品ID: {}", id);
+        }
     }
 }
