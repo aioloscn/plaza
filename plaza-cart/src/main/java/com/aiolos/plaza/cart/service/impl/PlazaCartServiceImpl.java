@@ -6,6 +6,7 @@ import com.aiolos.plaza.cart.model.bo.CartUpdateReq;
 import com.aiolos.plaza.cart.service.PlazaCartService;
 import com.aiolos.plaza.cart.model.vo.CartItemVO;
 import com.aiolos.plaza.cart.model.vo.CartListVO;
+import com.aiolos.plaza.enums.RedisKeyEnum;
 import com.aiolos.plaza.model.po.Product;
 import com.aiolos.plaza.model.po.Shop;
 import com.aiolos.plaza.service.CartItemService;
@@ -51,27 +52,23 @@ public class PlazaCartServiceImpl implements PlazaCartService {
     @Autowired
     private CartSaveProducer cartSaveProducer;
 
-    private static final String CART_PREFIX = "cart:";
-    // 购物车清空标记，用于防止幽灵数据回源，有效期较短（如1分钟）
-    private static final String CART_EMPTY_MARK_PREFIX = "cart:empty_mark:";
-    
     @Autowired
     private ObjectMapper objectMapper;
 
     private String getCartKey(Long userId, String deviceId) {
         if (userId != null && userId > 0) {
-            return CART_PREFIX + "user:" + userId;
+            return RedisKeyEnum.CART_USER.getKey(userId);
         } else if (deviceId != null && !deviceId.isEmpty()) {
-            return CART_PREFIX + "temp:" + deviceId;
+            return RedisKeyEnum.CART_TEMP.getKey(deviceId);
         }
         throw new RuntimeException("用户未登录且无设备ID");
     }
 
     private String getCartEmptyMarkKey(Long userId, String deviceId) {
         if (userId != null && userId > 0) {
-            return CART_EMPTY_MARK_PREFIX + "user:" + userId;
+            return RedisKeyEnum.CART_EMPTY_MARK_USER.getKey(userId);
         } else if (deviceId != null && !deviceId.isEmpty()) {
-            return CART_EMPTY_MARK_PREFIX + "temp:" + deviceId;
+            return RedisKeyEnum.CART_EMPTY_MARK_TEMP.getKey(deviceId);
         }
         return null;
     }
@@ -403,8 +400,8 @@ public class PlazaCartServiceImpl implements PlazaCartService {
             return;
         }
         
-        String tempKey = CART_PREFIX + "temp:" + deviceId;
-        String userKey = CART_PREFIX + "user:" + userId;
+        String tempKey = RedisKeyEnum.CART_TEMP.getKey(deviceId);
+        String userKey = RedisKeyEnum.CART_USER.getKey(userId);
         
         BoundHashOperations<String, String, String> tempOps = stringRedisTemplate.boundHashOps(tempKey);
         BoundHashOperations<String, String, String> userOps = stringRedisTemplate.boundHashOps(userKey);

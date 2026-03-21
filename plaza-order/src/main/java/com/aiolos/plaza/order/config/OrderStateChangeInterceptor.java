@@ -14,6 +14,7 @@ import org.springframework.statemachine.support.StateMachineInterceptorAdapter;
 import org.springframework.statemachine.transition.Transition;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 @Component
@@ -39,7 +40,7 @@ public class OrderStateChangeInterceptor extends StateMachineInterceptorAdapter<
                             
                             // 检查并设置支付时间（如果事件中传递了）
                             if (message.getHeaders().containsKey("paymentTime")) {
-                                java.time.LocalDateTime paymentTime = (java.time.LocalDateTime) message.getHeaders().get("paymentTime");
+                               LocalDateTime paymentTime = (java.time.LocalDateTime) message.getHeaders().get("paymentTime");
                                 order.setPaymentTime(paymentTime);
                             }
                             

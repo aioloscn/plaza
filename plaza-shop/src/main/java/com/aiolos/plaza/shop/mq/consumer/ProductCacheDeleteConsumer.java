@@ -1,5 +1,6 @@
 package com.aiolos.plaza.shop.mq.consumer;
 
+import com.aiolos.plaza.enums.RedisKeyEnum;
 import com.aiolos.plaza.mq.message.ProductCacheDeleteMessage;
 import com.aiolos.plaza.shop.service.ShopProductService;
 import lombok.extern.slf4j.Slf4j;
@@ -20,9 +21,6 @@ public class ProductCacheDeleteConsumer {
     @Autowired
     private ShopProductService shopProductService;
 
-    private static final String PRODUCT_INFO_PREFIX = "product:info:";
-    private static final String PRODUCT_STOCK_PREFIX = "product:stock:";
-
     @Bean
     public Consumer<ProductCacheDeleteMessage> productCacheDelete() {
         return message -> {
@@ -31,9 +29,9 @@ public class ProductCacheDeleteConsumer {
             
             try {
                 // 清理 Redis 缓存 L2
-                stringRedisTemplate.delete(PRODUCT_INFO_PREFIX + productId);
+                stringRedisTemplate.delete(RedisKeyEnum.PRODUCT_INFO.getKey(productId));
                 // 库存的缓存要不要删看业务需求，一般双删主要针对详情
-                stringRedisTemplate.delete(PRODUCT_STOCK_PREFIX + productId);
+                stringRedisTemplate.delete(RedisKeyEnum.PRODUCT_STOCK.getKey(productId));
                 
                 // 清理本地缓存 L1
                 shopProductService.clearLocalCache(productId);

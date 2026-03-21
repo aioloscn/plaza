@@ -3,15 +3,9 @@ package com.aiolos.plaza.order.service.impl;
 import com.aiolos.common.exception.util.ExceptionUtil;
 import com.aiolos.plaza.enums.OrderState;
 import com.aiolos.plaza.enums.exceptions.OrderExceptionEnum;
-import com.aiolos.plaza.mapper.AddressMapper;
-import com.aiolos.plaza.mapper.CartItemMapper;
 import com.aiolos.plaza.mapper.OrderItemMapper;
 import com.aiolos.plaza.mapper.OrderMapper;
 import com.aiolos.plaza.mapper.ParentOrderMapper;
-import com.aiolos.plaza.model.po.Address;
-import com.aiolos.plaza.model.po.CartItem;
-import com.aiolos.plaza.mq.message.CartAsyncSaveMessage;
-import com.aiolos.plaza.mq.constant.CartMqConstants;
 import com.aiolos.plaza.mq.constant.OrderMqConstants;
 import com.aiolos.plaza.order.config.AlipayConfig;
 import com.aiolos.plaza.model.po.MqLocalMessage;
@@ -23,26 +17,25 @@ import com.alipay.api.domain.AlipayTradeWapPayModel;
 import com.alipay.api.internal.util.AlipaySignature;
 import com.alipay.api.request.AlipayTradePagePayRequest;
 import com.alipay.api.request.AlipayTradeWapPayRequest;
-import com.aiolos.plaza.order.model.dto.CartItemDTO;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.aiolos.plaza.model.po.Order;
 import com.aiolos.plaza.model.po.OrderItem;
 import com.aiolos.plaza.model.po.ParentOrder;
 import com.aiolos.plaza.order.config.OrderStateChangeInterceptor;
+import com.aiolos.plaza.order.chain.ChainExecutor;
+import com.aiolos.plaza.order.chain.ChainHandler;
+import com.aiolos.plaza.order.chain.context.OrderCreateContext;
+import com.aiolos.plaza.order.chain.handler.order.AddressCheckHandler;
+import com.aiolos.plaza.order.chain.handler.order.CartClearHandler;
+import com.aiolos.plaza.order.chain.handler.order.CartFetchHandler;
+import com.aiolos.plaza.order.chain.handler.order.DelayMessageSendHandler;
+import com.aiolos.plaza.order.chain.handler.order.LocalMessageSaveHandler;
+import com.aiolos.plaza.order.chain.handler.order.OrderBuildHandler;
 import com.aiolos.plaza.order.model.bo.OrderSubmitReq;
-import com.aiolos.plaza.mq.message.StockDeductMessage;
-import com.aiolos.plaza.order.mq.producer.OrderMessageProducer;
 import com.aiolos.plaza.order.service.PlazaOrderService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import jakarta.annotation.Resource;
-import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.core.io.ClassPathResource;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Service;
@@ -54,8 +47,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import com.aiolos.plaza.mapper.ProductMapper;
-import com.aiolos.plaza.model.po.Product;
 import com.aiolos.plaza.mapper.ShopMapper;
 import com.aiolos.plaza.model.po.Shop;
 import com.aiolos.plaza.order.model.vo.OrderItemVO;
@@ -64,7 +55,6 @@ import org.springframework.statemachine.StateMachine;
 import org.springframework.statemachine.config.StateMachineFactory;
 import com.aiolos.plaza.enums.OrderEvent;
 
-import java.util.concurrent.TimeUnit;
 import com.alibaba.fastjson.JSON;
 
 @Slf4j
@@ -81,30 +71,10 @@ public class PlazaOrderServiceImpl implements PlazaOrderService {
     private ParentOrderMapper parentOrderMapper;
 
     @Autowired
-    private CartItemMapper cartItemMapper;
-
-    @Autowired
-    private AddressMapper addressMapper;
-
-    @Autowired
     private ShopMapper shopMapper;
 
     @Autowired
-    private ProductMapper productMapper;
-
-    @Autowired
-    @Qualifier("cartRedisTemplate")
-    private StringRedisTemplate cartRedisTemplate;
-
-    @Autowired
-    @Qualifier("shopRedisTemplate")
-    private StringRedisTemplate shopRedisTemplate;
-
-    @Autowired
     private StateMachineFactory<OrderState, OrderEvent> orderStateMachineFactory;
-
-    @Resource
-    private OrderMessageProducer orderMessageProducer;
 
     @Autowired
     private MqLocalMessageService mqLocalMessageService;
@@ -112,282 +82,49 @@ public class PlazaOrderServiceImpl implements PlazaOrderService {
     @Autowired
     private AlipayConfig alipayConfig;
 
-    private DefaultRedisScript<Long> stockDeductScript;
-
     @Autowired
     private OrderStateChangeInterceptor orderStateChangeInterceptor;
-
-    private static final String CART_PREFIX = "cart:";
-    private static final String PRODUCT_INFO_PREFIX = "product:info:";
-    private static final String PRODUCT_STOCK_PREFIX = "product:stock:";
     
     @Autowired
-    private ObjectMapper objectMapper;
+    private ChainExecutor chainExecutor;
 
-    @PostConstruct
-    public void init() {
-        stockDeductScript = new DefaultRedisScript<>();
-        stockDeductScript.setResultType(Long.class);
-        stockDeductScript.setLocation(new ClassPathResource("lua/stock_deduct.lua"));
-    }
+    @Autowired
+    private AddressCheckHandler addressCheckHandler;
+
+    @Autowired
+    private CartFetchHandler cartFetchHandler;
+
+    @Autowired
+    private OrderBuildHandler orderBuildHandler;
+
+    @Autowired
+    private CartClearHandler cartClearHandler;
+
+    @Autowired
+    private LocalMessageSaveHandler localMessageSaveHandler;
+
+    @Autowired
+    private DelayMessageSendHandler delayMessageSendHandler;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public String submit(Long userId, OrderSubmitReq req) {
-        // 1. 获取收货地址
-        Address address = addressMapper.selectById(req.getAddressId());
-        if (address == null) {
-            ExceptionUtil.throwException(OrderExceptionEnum.ADDRESS_NOT_EXIST);
-        }
+        OrderCreateContext context = new OrderCreateContext();
+        context.setUserId(userId);
+        context.setReq(req);
 
-        // 2. 获取购物车选中商品（优先从 Redis 获取）
-        List<CartItem> cartItems = new ArrayList<>();
-        String cartKey = CART_PREFIX + "user:" + userId;
-        Map<Object, Object> redisCart = cartRedisTemplate.opsForHash().entries(cartKey);
+        List<ChainHandler<OrderCreateContext>> handlers = Arrays.asList(
+                addressCheckHandler,
+                cartFetchHandler,
+                orderBuildHandler,
+                cartClearHandler,
+                localMessageSaveHandler,
+                delayMessageSendHandler
+        );
 
-        if (redisCart != null && !redisCart.isEmpty()) {
-            for (Object json : redisCart.values()) {
-                try {
-                    CartItemDTO cartItemDto = objectMapper.readValue(json.toString(), CartItemDTO.class);
-                    // 筛选选中的商品
-                    if (Boolean.TRUE.equals(cartItemDto.getChecked())) {
-                        // 如果指定了店铺，则进行过滤
-                        if (req.getShopId() != null && !req.getShopId().equals(cartItemDto.getShopId())) {
-                            continue;
-                        }
-                        
-                        CartItem cartItem = new CartItem();
-                        BeanUtils.copyProperties(cartItemDto, cartItem);
-                        cartItem.setUserId(userId);
-                        // 处理特殊字段映射
-                        cartItem.setProductImage(cartItemDto.getProductImage());
-                        // 确保ID正确
-                        cartItem.setId(cartItemDto.getId());
-                        
-                        cartItems.add(cartItem);
-                    }
-                } catch (Exception e) {
-                    log.error("解析购物车Redis数据失败", e);
-                }
-            }
-        }
+        chainExecutor.execute(handlers, context);
 
-        // 如果 Redis 中没有数据（异常情况），兜底查 MySQL
-        if (cartItems.isEmpty() && (redisCart == null || redisCart.isEmpty())) {
-            LambdaQueryWrapper<CartItem> cartQuery = new LambdaQueryWrapper<>();
-            cartQuery.eq(CartItem::getUserId, userId);
-            // 如果传入了 shopId（单店结算），则增加过滤条件
-            if (req.getShopId() != null) {
-                cartQuery.eq(CartItem::getShopId, req.getShopId());
-            }
-            cartQuery.eq(CartItem::getChecked, 1); // 只结算选中的商品
-            cartItems = cartItemMapper.selectList(cartQuery);
-        }
-
-        if (cartItems == null || cartItems.isEmpty()) {
-            ExceptionUtil.throwException(OrderExceptionEnum.CART_EMPTY);
-        }
-
-        // 3. 按店铺分组
-        Map<Long, List<CartItem>> shopCartMap = Objects.requireNonNull(cartItems).stream()
-                .collect(Collectors.groupingBy(CartItem::getShopId));
-
-        // 4. 生成父订单号
-        String parentOrderSn = generateOrderSn("P"); // 复用生成规则
-
-        List<StockDeductMessage> stockDeductMessages = new ArrayList<>();
-        List<Long> allCartIds = new ArrayList<>();
-        List<Long> orderIds = new ArrayList<>();
-        
-        BigDecimal parentTotalAmount = BigDecimal.ZERO;
-
-        // 5. 遍历店铺生成订单
-        for (Map.Entry<Long, List<CartItem>> entry : shopCartMap.entrySet()) {
-            Long shopId = entry.getKey();
-            List<CartItem> shopItems = entry.getValue();
-
-            // 生成子订单号
-            String orderSn = generateOrderSn("D");
-            
-            BigDecimal totalAmount = BigDecimal.ZERO;
-
-            for (CartItem item : shopItems) {
-                Long productId = item.getProductId();
-                allCartIds.add(item.getId());
-
-                // 从缓存中查询商品信息
-                String productJson = shopRedisTemplate.opsForValue().get(PRODUCT_INFO_PREFIX + productId);
-                if (productJson == null) {
-                    Product dbProduct = productMapper.selectById(productId);
-                    if (dbProduct == null || dbProduct.getStatus() != 1) {
-                        ExceptionUtil.throwException(OrderExceptionEnum.PRODUCT_NOT_EXIST);
-                    }
-                    shopRedisTemplate.opsForValue().set(PRODUCT_INFO_PREFIX + productId, JSON.toJSONString(dbProduct), 1, TimeUnit.DAYS);
-                    shopRedisTemplate.opsForValue().setIfAbsent(PRODUCT_STOCK_PREFIX + productId, String.valueOf(dbProduct.getStock()));
-                    productJson = JSON.toJSONString(dbProduct);
-                }
-
-                Product product = JSON.parseObject(productJson, Product.class);
-                if (product.getStatus() != 1) {
-                    ExceptionUtil.throwException(OrderExceptionEnum.PRODUCT_NOT_EXIST);
-                }
-
-                // 使用 Lua 脚本原子扣减缓存库存
-                Long result = shopRedisTemplate.execute(stockDeductScript, 
-                        Collections.singletonList(PRODUCT_STOCK_PREFIX + productId), 
-                        String.valueOf(item.getQuantity()));
-
-                if (result == -2) {
-                    ExceptionUtil.throwException(OrderExceptionEnum.PRODUCT_NOT_EXIST);
-                } else if (result == -1) {
-                    ExceptionUtil.throwException(OrderExceptionEnum.STOCK_NOT_ENOUGH);
-                }
-
-                stockDeductMessages.add(new StockDeductMessage(productId, item.getQuantity(), orderSn));
-
-                BigDecimal price = product.getPrice() != null ? product.getPrice() : BigDecimal.ZERO;
-                item.setPriceSnapshot(price);
-                BigDecimal itemAmount = price.multiply(new BigDecimal(item.getQuantity()));
-                totalAmount = totalAmount.add(itemAmount);
-            }
-
-            // 生成订单
-            Order order = new Order();
-            order.setOrderSn(orderSn);
-            order.setParentOrderSn(parentOrderSn); // 设置父订单号
-            order.setUserId(userId);
-            order.setShopId(shopId);
-            order.setTotalAmount(totalAmount);
-            order.setPayAmount(totalAmount);
-            order.setFreightAmount(BigDecimal.ZERO);
-            order.setPromotionAmount(BigDecimal.ZERO);
-            order.setPayType(req.getPayType());
-            order.setStatus(OrderState.CREATED.getCode());
-            order.setAddressId(req.getAddressId());
-
-            order.setReceiverName(address.getName());
-            order.setReceiverPhone(address.getTel());
-            order.setReceiverProvince(address.getProvince());
-            order.setReceiverCity(address.getCity());
-            order.setReceiverRegion(address.getCounty());
-            order.setReceiverDetailAddress(address.getAddressDetail());
-
-            // 设置备注
-            if (req.getShopNotes() != null && req.getShopNotes().containsKey(shopId)) {
-                order.setNote(req.getShopNotes().get(shopId));
-            }
-
-            order.setDeleteStatus(0);
-            order.setCreateTime(LocalDateTime.now());
-            order.setUpdateTime(LocalDateTime.now());
-            order.setConfirmStatus(0);
-
-            orderMapper.insert(order);
-            orderIds.add(order.getId());
-
-            // 生成订单项
-            for (CartItem cartItem : shopItems) {
-                OrderItem orderItem = new OrderItem();
-                orderItem.setOrderId(order.getId());
-                orderItem.setOrderSn(order.getOrderSn());
-                orderItem.setProductId(cartItem.getProductId());
-                orderItem.setProductPic(cartItem.getProductImage());
-                orderItem.setProductName(cartItem.getProductName());
-                orderItem.setProductPrice(cartItem.getPriceSnapshot());
-                orderItem.setProductQuantity(cartItem.getQuantity());
-                
-                BigDecimal price = cartItem.getPriceSnapshot() != null ? cartItem.getPriceSnapshot() : BigDecimal.ZERO;
-                orderItem.setRealAmount(price.multiply(new BigDecimal(cartItem.getQuantity())));
-                
-                orderItemMapper.insert(orderItem);
-            }
-            
-            parentTotalAmount = parentTotalAmount.add(totalAmount);
-        }
-
-        // 保存父订单
-        ParentOrder parentOrder = new ParentOrder();
-        parentOrder.setParentOrderSn(parentOrderSn);
-        parentOrder.setUserId(userId);
-        parentOrder.setTotalAmount(parentTotalAmount);
-        parentOrder.setPayAmount(parentTotalAmount);
-        parentOrder.setStatus(OrderState.CREATED.getCode());
-        parentOrder.setPayType(req.getPayType());
-        parentOrder.setDeleteStatus(0);
-        parentOrder.setCreateTime(LocalDateTime.now());
-        parentOrder.setUpdateTime(LocalDateTime.now());
-        parentOrderMapper.insert(parentOrder);
-
-        // 6. 物理清除订单服务本地的 MySQL 购物车记录
-        // MQ 消费端的删除会变成一次幂等操作（如果已经删了，MyBatisPlus 的 remove 也不会报错）。
-        if (!allCartIds.isEmpty()) {
-            cartItemMapper.deleteBatchIds(allCartIds);
-        }
-
-        // 清除 Redis 缓存中的商品
-        try {
-            Object[] productIds = cartItems.stream()
-                .map(item -> String.valueOf(item.getProductId()))
-                .toArray();
-            cartRedisTemplate.boundHashOps(cartKey).delete(productIds);
-            
-            // 检查购物车是否已空，如果为空则设置短期标记阻止并发回源
-            Long size = cartRedisTemplate.boundHashOps(cartKey).size();
-            if (size == null || size == 0) {
-                String emptyMarkKey = "cart:empty_mark:user:" + userId;
-                cartRedisTemplate.opsForValue().set(emptyMarkKey, "1", 60, java.util.concurrent.TimeUnit.SECONDS);
-            }
-        } catch (Exception e) {
-            log.error("清除Redis购物车缓存失败: userId={}", userId, e);
-        }
-
-        // 7. 写入本地消息表（Outbox模式），异步发送 MQ 消息去扣减数据库库存
-        List<MqLocalMessage> localMessages = new ArrayList<>();
-        for (StockDeductMessage msg : stockDeductMessages) {
-            MqLocalMessage localMsg = new MqLocalMessage();
-            localMsg.setTopic(OrderMqConstants.BINDING_STOCK_DEDUCT_OUT);
-            localMsg.setContent(JSON.toJSONString(msg));
-            localMsg.setState(0); // 0:新建
-            localMsg.setRetryCount(0);
-            localMsg.setBusinessKey(msg.getOrderSn());
-            localMsg.setCreateTime(LocalDateTime.now());
-            localMsg.setUpdateTime(LocalDateTime.now());
-            localMessages.add(localMsg);
-        }
-
-        // 7.1 写入本地消息表（Outbox模式），发送异步消息清除购物车 MySQL 数据（防幽灵数据）
-        if (!allCartIds.isEmpty()) {
-            for (CartItem item : cartItems) {
-                CartAsyncSaveMessage cartMsg = new CartAsyncSaveMessage();
-                cartMsg.setUserId(userId);
-                cartMsg.setProductId(item.getProductId());
-                cartMsg.setOperateType(2); // 2: 删除
-                
-                MqLocalMessage localMsg = new MqLocalMessage();
-                localMsg.setTopic(CartMqConstants.BINDING_CART_SAVE_OUT);
-                localMsg.setContent(JSON.toJSONString(cartMsg));
-                localMsg.setState(0); // 0:新建
-                localMsg.setRetryCount(0);
-                localMsg.setBusinessKey(String.valueOf(userId));
-                localMsg.setCreateTime(LocalDateTime.now());
-                localMsg.setUpdateTime(LocalDateTime.now());
-                localMessages.add(localMsg);
-            }
-        }
-        
-        // 批量保存本地消息
-        if (!localMessages.isEmpty()) {
-            mqLocalMessageService.saveBatch(localMessages);
-        }
-
-        // 8. 发送延迟消息（这个可以允许直接发送，因为延迟消息本身就是异步的且对一致性要求稍低，或者也可以改为本地消息表，这里先保持原样，或者也改为本地消息表）
-        // 考虑到延迟消息是 RocketMQ 的特性，本地消息表重发时也需要支持延迟发送，这里为了简单起见，延迟消息暂时不改，因为如果事务回滚了，延迟消息发出去也就是多了一个无效检查而已，影响不大。
-        // 但为了严谨，也可以纳入。不过这里只改前两个关键的。
-        for (Long orderId : orderIds) {
-            orderMessageProducer.sendOrderTimeoutMessage(orderId, 14);
-        }
-
-        return parentOrderSn;
+        return context.getParentOrderSn();
     }
 
     @Override
@@ -625,7 +362,19 @@ public class PlazaOrderServiceImpl implements PlazaOrderService {
             Message<OrderEvent> message = MessageBuilder.withPayload(OrderEvent.CANCEL)
                     .setHeader("orderId", order.getId())
                     .build();
-            stateMachine.sendEvent(message);
+            boolean accepted = stateMachine.sendEvent(message);
+            
+            // 状态机是否可以处理该事件，状态不匹配返回 false，Action抛出异常依然会返回 true
+            if (!accepted) {
+                log.warn("状态机拒绝取消事件，订单号: {}", order.getOrderSn());
+                continue;
+            }
+
+            // 发送事件后，检查状态机内部是否发生了被吞掉的异常
+            if (stateMachine.hasStateMachineError()) {
+                log.error("状态机执行Action发生异常，触发事务回滚，订单号: {}", order.getOrderSn());
+                ExceptionUtil.throwException(OrderExceptionEnum.ORDER_STOCK_RELEASE_FAIL);
+            }
 
             log.info("超时未支付订单取消成功，订单号: {}", order.getOrderSn());
         }
@@ -654,6 +403,12 @@ public class PlazaOrderServiceImpl implements PlazaOrderService {
         if (!accepted) {
             log.warn("状态机拒绝取消事件，订单号: {}", order.getOrderSn());
             return;
+        }
+
+        // 发送事件后，检查状态机内部是否发生了被吞掉的异常
+        if (stateMachine.hasStateMachineError()) {
+            log.error("状态机执行Action发生异常，触发事务回滚，订单号: {}", order.getOrderSn());
+            ExceptionUtil.throwException(OrderExceptionEnum.ORDER_STOCK_RELEASE_FAIL);
         }
 
         log.info("延迟消息触发未支付订单取消成功，订单号: {}", order.getOrderSn());

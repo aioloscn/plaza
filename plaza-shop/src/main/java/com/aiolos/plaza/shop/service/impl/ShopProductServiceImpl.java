@@ -2,7 +2,10 @@ package com.aiolos.plaza.shop.service.impl;
 
 import com.aiolos.common.enums.base.BoolEnum;
 import com.aiolos.common.util.ConvertBeanUtil;
+import com.aiolos.plaza.enums.RedisKeyEnum;
+import com.aiolos.plaza.mapper.ProductStockLogMapper;
 import com.aiolos.plaza.model.po.Product;
+import com.aiolos.plaza.model.po.ProductStockLog;
 import com.aiolos.plaza.service.ProductService;
 import com.aiolos.plaza.shop.model.vo.ProductVO;
 import com.aiolos.plaza.shop.mq.producer.ProductMessageProducer;
@@ -17,6 +20,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -31,13 +35,13 @@ public class ShopProductServiceImpl implements ShopProductService {
     private ProductService productService;
 
     @Autowired
+    private ProductStockLogMapper productStockLogMapper;
+
+    @Autowired
     private StringRedisTemplate stringRedisTemplate;
 
     @Autowired
     private ProductMessageProducer productMessageProducer;
-
-    private static final String PRODUCT_INFO_PREFIX = "product:info:";
-    private static final String PRODUCT_STOCK_PREFIX = "product:stock:";
     
     @Autowired
     private ObjectMapper objectMapper;
@@ -59,10 +63,10 @@ public class ShopProductServiceImpl implements ShopProductService {
         for (Product product : productList) {
             try {
                 // 缓存商品信息，过期时间1天
-                stringRedisTemplate.opsForValue().set(PRODUCT_INFO_PREFIX + product.getId(), 
+                stringRedisTemplate.opsForValue().set(RedisKeyEnum.PRODUCT_INFO.getKey(product.getId()), 
                         objectMapper.writeValueAsString(product), 1, TimeUnit.DAYS);
                 // 初始化库存缓存，如果不存在才设置
-                stringRedisTemplate.opsForValue().setIfAbsent(PRODUCT_STOCK_PREFIX + product.getId(), 
+                stringRedisTemplate.opsForValue().setIfAbsent(RedisKeyEnum.PRODUCT_STOCK.getKey(product.getId()), 
                         String.valueOf(product.getStock()));
             } catch (JsonProcessingException e) {
                 log.error("缓存商品信息失败，商品ID: {}", product.getId(), e);
@@ -90,7 +94,7 @@ public class ShopProductServiceImpl implements ShopProductService {
         }
 
         // 1. 本地缓存未命中，查 Redis (L2)
-        String productJson = stringRedisTemplate.opsForValue().get(PRODUCT_INFO_PREFIX + id);
+        String productJson = stringRedisTemplate.opsForValue().get(RedisKeyEnum.PRODUCT_INFO.getKey(id));
         if (productJson != null) {
             try {
                 Product product = objectMapper.readValue(productJson, Product.class);
@@ -110,10 +114,10 @@ public class ShopProductServiceImpl implements ShopProductService {
             try {
                 // 3. 查到后回写 Redis
                 // 缓存商品信息，过期时间1天
-                stringRedisTemplate.opsForValue().set(PRODUCT_INFO_PREFIX + product.getId(), 
+                stringRedisTemplate.opsForValue().set(RedisKeyEnum.PRODUCT_INFO.getKey(product.getId()), 
                         objectMapper.writeValueAsString(product), 1, TimeUnit.DAYS);
                 // 初始化库存缓存
-                stringRedisTemplate.opsForValue().setIfAbsent(PRODUCT_STOCK_PREFIX + product.getId(), 
+                stringRedisTemplate.opsForValue().setIfAbsent(RedisKeyEnum.PRODUCT_STOCK.getKey(product.getId()), 
                         String.valueOf(product.getStock()));
                         
                 // 回写本地缓存
@@ -135,13 +139,20 @@ public class ShopProductServiceImpl implements ShopProductService {
         
         Long productId = product.getId();
         
+        // 查询旧商品信息以比对库存是否发生变化
+        Product oldProduct = productService.getById(productId);
+        int stockDiff = 0;
+        if (oldProduct != null && product.getStock() != null && !product.getStock().equals(oldProduct.getStock())) {
+            stockDiff = product.getStock() - oldProduct.getStock();
+        }
+
         // 0. 第一次清理本地缓存 L1
         localProductCache.invalidate(productId);
         
         // 1. 第一次删除缓存 L2
         try {
-            stringRedisTemplate.delete(PRODUCT_INFO_PREFIX + productId);
-            stringRedisTemplate.delete(PRODUCT_STOCK_PREFIX + productId);
+            stringRedisTemplate.delete(RedisKeyEnum.PRODUCT_INFO.getKey(productId));
+            stringRedisTemplate.delete(RedisKeyEnum.PRODUCT_STOCK.getKey(productId));
             log.info("商品更新：第一次删除缓存成功，商品ID: {}", productId);
         } catch (Exception e) {
             log.error("商品更新：第一次删除缓存失败，商品ID: {}", productId, e);
@@ -149,6 +160,16 @@ public class ShopProductServiceImpl implements ShopProductService {
         
         // 2. 更新数据库
         boolean updateResult = productService.updateById(product);
+        
+        if (updateResult && stockDiff != 0) {
+            // 记录库存操作日志（后台修改）
+            ProductStockLog stockLog = new ProductStockLog();
+            stockLog.setProductId(productId);
+            stockLog.setAmount(stockDiff);
+            stockLog.setType(3); // 3-后台修改
+            stockLog.setCreateTime(LocalDateTime.now());
+            productStockLogMapper.insert(stockLog);
+        }
         
         // 3. 发送延迟消息进行第二次删除缓存（延迟级别 1，大约1秒）
         if (updateResult) {

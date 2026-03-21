@@ -1,5 +1,6 @@
 package com.aiolos.plaza.home.canal;
 
+import com.aiolos.plaza.enums.RedisKeyEnum;
 import com.aiolos.plaza.mapper.ShopMapper;
 import com.alibaba.otter.canal.client.CanalConnector;
 import com.alibaba.otter.canal.protocol.CanalEntry;
@@ -39,10 +40,8 @@ import java.util.stream.Collectors;
 public class CanalScheduling implements Runnable {
 
     // 任务级互斥锁
-    private static final String CANAL_RUN_LOCK_KEY = "lock:canal:run";
     private static final long CANAL_RUN_LOCK_TTL_SECONDS = 15L;
     // 按 shopId 的细粒度锁
-    private static final String SHOP_INDEX_LOCK_KEY_PREFIX = "lock:shop:index:";
     private static final long SHOP_INDEX_LOCK_TTL_SECONDS = 5L;
     private static final int SHOP_INDEX_LOCK_MAX_RETRY_COUNT = 2;
     private static final long SHOP_INDEX_LOCK_RETRY_INTERVAL_MILLIS = 50L;
@@ -88,7 +87,7 @@ public class CanalScheduling implements Runnable {
     @Scheduled(fixedDelay = 100)    // 每隔100ms拉取一次数据
     public void run() {
         // 获取任务锁后立即注册续约任务，避免长耗时处理导致锁过期
-        LockHandle runLockHandle = acquireLockWithRenewal(CANAL_RUN_LOCK_KEY, CANAL_RUN_LOCK_TTL_SECONDS);
+        LockHandle runLockHandle = acquireLockWithRenewal(RedisKeyEnum.LOCK_CANAL_RUN.getKey(), CANAL_RUN_LOCK_TTL_SECONDS);
         if (runLockHandle == null) {
             runLockAcquireFailCount.incrementAndGet();
             logLockMetricsIfNeeded();
@@ -195,7 +194,7 @@ public class CanalScheduling implements Runnable {
                             continue;
                         }
                         // 保证同一shopId写入互斥，避免写入ES的同时其他业务修改了shop数据而感知不到
-                        String lockKey = SHOP_INDEX_LOCK_KEY_PREFIX + shop.getId();
+                        String lockKey = RedisKeyEnum.LOCK_SHOP_INDEX.getKey(shop.getId());
                         // shop级锁同样启用“重试 + 自动续约”
                         LockHandle lockHandle = acquireLockWithRetryAndRenewal(
                             lockKey,

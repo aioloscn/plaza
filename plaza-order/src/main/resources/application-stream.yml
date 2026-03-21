@@ -1,0 +1,38 @@
+spring:
+  cloud:
+    stream:
+      function:
+        definition: orderTimeout;stockDeduct;cartSave;orderPaid
+      default:
+        content-type: application/json
+        consumer:
+          max-attempts: 3
+          back-off-initial-interval: 1000
+          back-off-multiplier: 2.0
+          back-off-max-interval: 10000
+      bindings:
+        orderPaid-out-0:
+          destination: order-paid-topic
+        orderPaid-in-0:
+          destination: order-paid-topic
+          group: order-paid-group
+        orderTimeout-out-0:
+          destination: order-timeout-topic
+        orderTimeout-in-0:
+          destination: order-timeout-topic
+          group: order-timeout-group
+        stockDeduct-out-0:
+          destination: stock-deduct-topic
+        stockDeduct-in-0:
+          destination: stock-deduct-topic
+          group: stock-deduct-group
+        cartSave-out-0:
+          destination: cart-save-topic
+      rocketmq:
+        binder:
+          name-server: ${ROCKETMQ_HOST:127.0.0.1}:9876
+
+rocketmq:
+  name-server: ${ROCKETMQ_HOST:127.0.0.1}:9876
+  producer:
+    group: seckill-order-tx-producer-group

@@ -1,5 +1,6 @@
 package com.aiolos.plaza.cart.mq.consumer;
 
+import com.aiolos.plaza.enums.RedisKeyEnum;
 import com.aiolos.plaza.model.po.CartItem;
 import com.aiolos.plaza.mq.message.CartAsyncSaveMessage;
 import com.aiolos.plaza.service.CartItemService;
@@ -37,7 +38,7 @@ public class CartSaveConsumer {
                             .remove();
                     
                     // 2. 物理删除 Redis 缓存（防止并发回源导致的脏数据复活）
-                    String cartKey = "cart:user:" + message.getUserId();
+                    String cartKey = RedisKeyEnum.CART_USER.getKey(message.getUserId());
                     stringRedisTemplate.delete(cartKey);
                     
                     log.info("Deleted cart item from MySQL and Redis, userId:{}, productId:{}", message.getUserId(), message.getProductId());
