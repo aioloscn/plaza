@@ -24,7 +24,7 @@ public class ProductCacheDeleteConsumer {
     @Bean
     public Consumer<ProductCacheDeleteMessage> productCacheDelete() {
         return message -> {
-            Long productId = message.getProductId();
+            Long productId = message.productId();
             log.info("接收到商品缓存双删延迟消息，开始第二次删除缓存，商品ID: {}", productId);
             
             try {

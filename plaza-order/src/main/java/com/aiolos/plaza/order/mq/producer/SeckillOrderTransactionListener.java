@@ -148,7 +148,7 @@ public class SeckillOrderTransactionListener implements RocketMQLocalTransaction
             return RocketMQLocalTransactionState.ROLLBACK;
         }
         Long exists = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
-                .eq(Order::getOrderSn, stockDeductMessage.getOrderSn()));
+                .eq(Order::getOrderSn, stockDeductMessage.orderSn()));
         if (exists != null && exists > 0) {
             return RocketMQLocalTransactionState.COMMIT;
         }

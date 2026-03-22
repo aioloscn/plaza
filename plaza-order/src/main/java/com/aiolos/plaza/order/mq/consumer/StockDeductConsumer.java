@@ -32,17 +32,17 @@ public class StockDeductConsumer {
         return message -> {
             log.info("收到扣减数据库库存消息: {}", message);
             try {
-                if (message != null && message.getProductId() != null && message.getQuantity() != null) {
+                if (message != null && message.productId() != null && message.quantity() != null) {
                     // 使用数据库的乐观锁进行最终的安全扣减
-                    int rows = productMapper.deductStock(message.getProductId(), message.getQuantity());
+                    int rows = productMapper.deductStock(message.productId(), message.quantity());
                     if (rows > 0) {
-                        log.info("数据库库存扣减成功, productId: {}, quantity: {}", message.getProductId(), message.getQuantity());
+                        log.info("数据库库存扣减成功, productId: {}, quantity: {}", message.productId(), message.quantity());
                         
                         // 记录库存操作日志
                         ProductStockLog stockLog = new ProductStockLog();
-                        stockLog.setProductId(message.getProductId());
-                        stockLog.setOrderSn(message.getOrderSn());
-                        stockLog.setAmount(-message.getQuantity()); // 负数表示扣减
+                        stockLog.setProductId(message.productId());
+                        stockLog.setOrderSn(message.orderSn());
+                        stockLog.setAmount(-message.quantity()); // 负数表示扣减
                         stockLog.setType(1); // 1-下单扣减
                         stockLog.setCreateTime(LocalDateTime.now());
                         productStockLogMapper.insert(stockLog);

@@ -32,7 +32,7 @@ public class LocalMessageSaveHandler implements ChainHandler<OrderCreateContext>
             localMsg.setContent(JSON.toJSONString(msg));
             localMsg.setState(0);
             localMsg.setRetryCount(0);
-            localMsg.setBusinessKey(msg.getOrderSn());
+            localMsg.setBusinessKey(msg.orderSn());
             localMsg.setCreateTime(LocalDateTime.now());
             localMsg.setUpdateTime(LocalDateTime.now());
             context.getLocalMessages().add(localMsg);
@@ -40,10 +40,18 @@ public class LocalMessageSaveHandler implements ChainHandler<OrderCreateContext>
 
         if (!context.getAllCartIds().isEmpty()) {
             for (CartItem item : context.getCartItems()) {
-                CartAsyncSaveMessage cartMsg = new CartAsyncSaveMessage();
-                cartMsg.setUserId(userId);
-                cartMsg.setProductId(item.getProductId());
-                cartMsg.setOperateType(2);
+                CartAsyncSaveMessage cartMsg = new CartAsyncSaveMessage(
+                        userId,
+                        null,
+                        item.getProductId(),
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        2 // 2表示删除
+                );
 
                 MqLocalMessage localMsg = new MqLocalMessage();
                 localMsg.setTopic(CartMqConstants.BINDING_CART_SAVE_OUT);

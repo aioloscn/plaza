@@ -30,29 +30,29 @@ public class CartSaveConsumer {
             
             try {
                 // 判断操作类型
-                if (message.getOperateType() != null && message.getOperateType() == 2) {
+                if (message.operateType() != null && message.operateType() == 2) {
                     // 1. 物理删除购物车数据库记录
                     cartItemService.lambdaUpdate()
-                            .eq(CartItem::getUserId, message.getUserId())
-                            .eq(CartItem::getProductId, message.getProductId())
+                            .eq(CartItem::getUserId, message.userId())
+                            .eq(CartItem::getProductId, message.productId())
                             .remove();
                     
                     // 2. 物理删除 Redis 缓存（防止并发回源导致的脏数据复活）
-                    String cartKey = RedisKeyEnum.CART_USER.getKey(message.getUserId());
+                    String cartKey = RedisKeyEnum.CART_USER.getKey(message.userId());
                     stringRedisTemplate.delete(cartKey);
                     
-                    log.info("Deleted cart item from MySQL and Redis, userId:{}, productId:{}", message.getUserId(), message.getProductId());
+                    log.info("Deleted cart item from MySQL and Redis, userId:{}, productId:{}", message.userId(), message.productId());
                     return;
                 }
 
                 // 检查数据库中是否已存在该商品
-                CartItem existingItem = cartItemService.lambdaQuery().eq(CartItem::getUserId, message.getUserId()).eq(CartItem::getProductId, message.getProductId()).one();
+                CartItem existingItem = cartItemService.lambdaQuery().eq(CartItem::getUserId, message.userId()).eq(CartItem::getProductId, message.productId()).one();
                 
                 if (existingItem != null) {
                     // 更新
                     CartItem updateItem = new CartItem();
                     updateItem.setId(existingItem.getId());
-                    updateItem.setQuantity(message.getQuantity());
+                    updateItem.setQuantity(message.quantity());
                     updateItem.setUpdateTime(java.time.LocalDateTime.now());
                     cartItemService.updateById(updateItem);
                 } else {

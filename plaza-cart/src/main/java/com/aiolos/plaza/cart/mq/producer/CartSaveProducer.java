@@ -20,6 +20,6 @@ public class CartSaveProducer {
 
     public void sendCartSaveMessage(CartAsyncSaveMessage message) {
         streamBridge.send(CartMqConstants.BINDING_CART_SAVE_OUT, MessageBuilder.withPayload(message).build());
-        log.info("Sent cart save message for user: {}, product: {}", message.getUserId(), message.getProductId());
+        log.info("Sent cart save message for user: {}, product: {}", message.userId(), message.productId());
     }
 }

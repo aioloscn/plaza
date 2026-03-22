@@ -1,33 +1,11 @@
 package com.aiolos.plaza.mq.message;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
 import java.io.Serializable;
 
 /**
  * 扣减库存消息DTO
+ * @param productId 商品ID
+ * @param quantity  扣减数量
+ * @param orderSn   关联的订单号 (可选，用于排查和幂等)
  */
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-public class StockDeductMessage implements Serializable {
-    
-    private static final long serialVersionUID = 1L;
-
-    /**
-     * 商品ID
-     */
-    private Long productId;
-
-    /**
-     * 扣减数量
-     */
-    private Integer quantity;
-
-    /**
-     * 关联的订单号 (可选，用于排查和幂等)
-     */
-    private String orderSn;
-}
+public record StockDeductMessage(Long productId, Integer quantity, String orderSn) implements Serializable {}

@@ -87,22 +87,22 @@ public class OrderMessageProducer {
         int random = (int) (Math.random() * 9000 + 1000);
         String parentOrderSn = "P" + dateStr + random;
         String orderSn = "D" + dateStr + random;
-        StockDeductMessage stockDeductMessage = new StockDeductMessage(message.getProductId(), message.getCount(), orderSn);
+        StockDeductMessage stockDeductMessage = new StockDeductMessage(message.productId(), message.count(), orderSn);
         SeckillOrderTxContext txContext = SeckillOrderTxContext.builder()
-                .activityId(message.getActivityId())
-                .shopId(message.getShopId())
-                .userId(message.getUserId())
-                .productId(message.getProductId())
-                .price(message.getPrice())
-                .count(message.getCount())
+                .activityId(message.activityId())
+                .shopId(message.shopId())
+                .userId(message.userId())
+                .productId(message.productId())
+                .price(message.price())
+                .count(message.count())
                 .parentOrderSn(parentOrderSn)
                 .orderSn(orderSn)
                 .build();
         // 回查补偿需要的上下文字段，放入消息头，避免仅靠 payload 无法恢复活动维度信息
         Message<StockDeductMessage> txMessage = MessageBuilder.withPayload(stockDeductMessage)
-                .setHeader("activityId", message.getActivityId())
-                .setHeader("userId", message.getUserId())
-                .setHeader("count", message.getCount())
+                .setHeader("activityId", message.activityId())
+                .setHeader("userId", message.userId())
+                .setHeader("count", message.count())
                 .build();
         // sendMessageInTransaction 会先发半消息，再触发本地事务回调
         TransactionSendResult sendResult = seckillTxRocketMQTemplate.sendMessageInTransaction(

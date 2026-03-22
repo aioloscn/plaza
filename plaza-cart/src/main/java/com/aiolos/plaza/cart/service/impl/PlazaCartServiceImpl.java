@@ -137,15 +137,22 @@ public class PlazaCartServiceImpl implements PlazaCartService {
             
             // 异步落库到 MySQL
             if (userId != null && userId > 0) {
-                CartAsyncSaveMessage message = new CartAsyncSaveMessage();
-                message.setUserId(userId);
                 // 重新获取一下最新的 itemVO，确保数据一致
                 String json = hashOps.get(productIdStr);
                 CartItemVO currentItem = objectMapper.readValue(json, CartItemVO.class);
-                BeanUtils.copyProperties(currentItem, message);
-                message.setChecked(currentItem.getChecked() ? 1 : 0);
-                message.setPriceSnapshot(currentItem.getPrice());
-                message.setStatus(1);
+                
+                CartAsyncSaveMessage message = new CartAsyncSaveMessage(
+                        userId,
+                        currentItem.getShopId(),
+                        currentItem.getProductId(),
+                        currentItem.getQuantity(),
+                        currentItem.getChecked() ? 1 : 0,
+                        currentItem.getPrice(),
+                        currentItem.getProductName(),
+                        currentItem.getProductImage(),
+                        1,
+                        1 // 1:保存/更新
+                );
                 
                 cartSaveProducer.sendCartSaveMessage(message);
             }
@@ -171,12 +178,18 @@ public class PlazaCartServiceImpl implements PlazaCartService {
 
                 // 异步落库到 MySQL
                 if (userId != null && userId > 0) {
-                    CartAsyncSaveMessage message = new CartAsyncSaveMessage();
-                    message.setUserId(userId);
-                    BeanUtils.copyProperties(itemVO, message);
-                    message.setChecked(itemVO.getChecked() ? 1 : 0);
-                    message.setPriceSnapshot(itemVO.getPrice());
-                    message.setStatus(1);
+                    CartAsyncSaveMessage message = new CartAsyncSaveMessage(
+                            userId,
+                            itemVO.getShopId(),
+                            itemVO.getProductId(),
+                            itemVO.getQuantity(),
+                            itemVO.getChecked() ? 1 : 0,
+                            itemVO.getPrice(),
+                            itemVO.getProductName(),
+                            itemVO.getProductImage(),
+                            1,
+                            1 // 1:保存/更新
+                    );
                     cartSaveProducer.sendCartSaveMessage(message);
                 }
             }
@@ -200,10 +213,18 @@ public class PlazaCartServiceImpl implements PlazaCartService {
 
         // 异步删除 MySQL 中的记录
         if (userId != null && userId > 0) {
-            CartAsyncSaveMessage message = new CartAsyncSaveMessage();
-            message.setUserId(userId);
-            message.setProductId(productId);
-            message.setOperateType(2); // 2 表示删除
+            CartAsyncSaveMessage message = new CartAsyncSaveMessage(
+                    userId,
+                    null, // shopId not needed for delete
+                    productId,
+                    null, // quantity not needed
+                    null, // checked not needed
+                    null, // price not needed
+                    null, // name not needed
+                    null, // image not needed
+                    null, // status not needed
+                    2 // 2 表示删除
+            );
             cartSaveProducer.sendCartSaveMessage(message);
         }
     }
@@ -379,10 +400,18 @@ public class PlazaCartServiceImpl implements PlazaCartService {
             // 同步删除 MySQL 中的记录
             if (userId != null && userId > 0) {
                 for (String pidStr : invalidProductIds) {
-                    CartAsyncSaveMessage message = new CartAsyncSaveMessage();
-                    message.setUserId(userId);
-                    message.setProductId(Long.valueOf(pidStr));
-                    message.setOperateType(2); // 2 表示删除
+                    CartAsyncSaveMessage message = new CartAsyncSaveMessage(
+                            userId,
+                            null,
+                            Long.valueOf(pidStr),
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            2 // 2 表示删除
+                    );
                     cartSaveProducer.sendCartSaveMessage(message);
                 }
             }
@@ -429,12 +458,18 @@ public class PlazaCartServiceImpl implements PlazaCartService {
                     }
                     
                     // 异步落库到 MySQL
-                    CartAsyncSaveMessage message = new CartAsyncSaveMessage();
-                    BeanUtils.copyProperties(finalItem, message);
-                    message.setUserId(userId);
-                    message.setChecked(finalItem.getChecked() ? 1 : 0);
-                    message.setPriceSnapshot(finalItem.getPrice());
-                    message.setStatus(1);
+                    CartAsyncSaveMessage message = new CartAsyncSaveMessage(
+                            userId,
+                            finalItem.getShopId(),
+                            finalItem.getProductId(),
+                            finalItem.getQuantity(),
+                            finalItem.getChecked() ? 1 : 0,
+                            finalItem.getPrice(),
+                            finalItem.getProductName(),
+                            finalItem.getProductImage(),
+                            1,
+                            1 // 1:保存/更新
+                    );
                     cartSaveProducer.sendCartSaveMessage(message);
                 }
                 // 删除临时购物车
@@ -460,10 +495,18 @@ public class PlazaCartServiceImpl implements PlazaCartService {
                         
                         // 异步删除 MySQL 中的记录
                         if (userId != null && userId > 0) {
-                            CartAsyncSaveMessage message = new CartAsyncSaveMessage();
-                            message.setUserId(userId);
-                            message.setProductId(itemVO.getProductId());
-                            message.setOperateType(2); // 2 表示删除
+                            CartAsyncSaveMessage message = new CartAsyncSaveMessage(
+                                    userId,
+                                    null,
+                                    itemVO.getProductId(),
+                                    null,
+                                    null,
+                                    null,
+                                    null,
+                                    null,
+                                    null,
+                                    2 // 2 表示删除
+                            );
                             cartSaveProducer.sendCartSaveMessage(message);
                         }
                     }
