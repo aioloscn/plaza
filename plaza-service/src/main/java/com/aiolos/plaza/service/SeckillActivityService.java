@@ -9,5 +9,4 @@ import com.baomidou.mybatisplus.extension.service.IService;
  * </p>
  */
 public interface SeckillActivityService extends IService<SeckillActivity> {
-
 }

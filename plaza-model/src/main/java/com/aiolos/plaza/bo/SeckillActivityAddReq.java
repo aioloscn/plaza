@@ -1,4 +1,4 @@
-package com.aiolos.plaza.order.model.bo;
+package com.aiolos.plaza.bo;
 
 import lombok.Data;
 import java.math.BigDecimal;

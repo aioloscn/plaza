@@ -33,13 +33,13 @@ public class RedisConfig {
     }
 
     @Bean
-    public LettuceConnectionFactory cartRedisConnectionFactory(Environment environment) {
+    public LettuceConnectionFactory orderRedisConnectionFactory(Environment environment) {
         RedisProperties properties = bindRedisProperties(environment, "spring.data.redis.cart");
         return createConnectionFactory(properties);
     }
 
-    @Bean(name = "cartRedisTemplate")
-    public StringRedisTemplate cartRedisTemplate(@Qualifier("cartRedisConnectionFactory") LettuceConnectionFactory connectionFactory) {
+    @Bean(name = "orderRedisTemplate")
+    public StringRedisTemplate orderRedisTemplate(@Qualifier("orderRedisConnectionFactory") LettuceConnectionFactory connectionFactory) {
         return new StringRedisTemplate(connectionFactory);
     }
 

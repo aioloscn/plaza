@@ -14,6 +14,7 @@ import java.math.BigDecimal;
  * @param productId 商品ID
  * @param price 秒杀价格
  * @param count 购买数量（通常为1）
+ * @param addressId 收货地址ID
  */
 @Builder
 public record SeckillOrderMessage(
@@ -22,6 +23,7 @@ public record SeckillOrderMessage(
         Long userId,
         Long productId,
         BigDecimal price,
-        Integer count
+        Integer count,
+        Long addressId
 ) implements Serializable {
 }

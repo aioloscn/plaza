@@ -21,8 +21,8 @@ public class CartClearHandler implements ChainHandler<OrderCreateContext> {
     private CartItemMapper cartItemMapper;
 
     @Autowired
-    @Qualifier("cartRedisTemplate")
-    private StringRedisTemplate cartRedisTemplate;
+    @Qualifier("orderRedisTemplate")
+    private StringRedisTemplate orderRedisTemplate;
 
     @Override
     public void handle(OrderCreateContext context, Chain<OrderCreateContext> chain) {
@@ -37,12 +37,12 @@ public class CartClearHandler implements ChainHandler<OrderCreateContext> {
             Object[] productIds = context.getCartItems().stream()
                     .map(item -> String.valueOf(item.getProductId()))
                     .toArray();
-            cartRedisTemplate.boundHashOps(cartKey).delete(productIds);
+            orderRedisTemplate.boundHashOps(cartKey).delete(productIds);
 
-            Long size = cartRedisTemplate.boundHashOps(cartKey).size();
+            Long size = orderRedisTemplate.boundHashOps(cartKey).size();
             if (size == null || size == 0) {
                 String emptyMarkKey = RedisKeyEnum.CART_EMPTY_MARK_USER.getKey(userId);
-                cartRedisTemplate.opsForValue().set(emptyMarkKey, "1", 60, TimeUnit.SECONDS);
+                orderRedisTemplate.opsForValue().set(emptyMarkKey, "1", 60, TimeUnit.SECONDS);
             }
         } catch (Exception e) {
             log.error("清除Redis购物车缓存失败: userId={}", userId, e);

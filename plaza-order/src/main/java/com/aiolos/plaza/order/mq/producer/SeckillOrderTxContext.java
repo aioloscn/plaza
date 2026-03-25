@@ -24,4 +24,5 @@ public class SeckillOrderTxContext implements Serializable {
     private Integer count;
     private String parentOrderSn;
     private String orderSn;
+    private Long addressId;
 }

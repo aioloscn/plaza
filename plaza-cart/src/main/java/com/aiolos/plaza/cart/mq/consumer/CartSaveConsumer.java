@@ -24,24 +24,25 @@ public class CartSaveConsumer {
     private StringRedisTemplate stringRedisTemplate;
 
     @Bean
-    public Consumer<CartAsyncSaveMessage> cartSave() {
+    public Consumer<CartAsyncSaveMessage> cartChange() {
         return message -> {
-            log.info("Received cart save message: {}", message);
+            log.info("Received cart update message: {}", message);
             
             try {
                 // 判断操作类型
                 if (message.operateType() != null && message.operateType() == 2) {
                     // 1. 物理删除购物车数据库记录
-                    cartItemService.lambdaUpdate()
+                    boolean remove = cartItemService.lambdaUpdate()
                             .eq(CartItem::getUserId, message.userId())
                             .eq(CartItem::getProductId, message.productId())
                             .remove();
-                    
+
                     // 2. 物理删除 Redis 缓存（防止并发回源导致的脏数据复活）
                     String cartKey = RedisKeyEnum.CART_USER.getKey(message.userId());
-                    stringRedisTemplate.delete(cartKey);
-                    
-                    log.info("Deleted cart item from MySQL and Redis, userId:{}, productId:{}", message.userId(), message.productId());
+                    Boolean delete = stringRedisTemplate.delete(cartKey);
+
+                    log.info("Deleted cart item from MySQL and Redis, userId:{}, productId:{}, MySQL result: {}, Redis result: {}", 
+                            message.userId(), message.productId(), remove, delete);
                     return;
                 }
 

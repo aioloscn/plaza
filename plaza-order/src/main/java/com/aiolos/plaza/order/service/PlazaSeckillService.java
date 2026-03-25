@@ -12,16 +12,4 @@ public interface PlazaSeckillService {
      */
     boolean submitSeckill(SeckillSubmitReq req, Long userId);
 
-    /**
-     * 添加秒杀活动商品
-     * @param req 添加参数
-     * @return 活动ID
-     */
-    Long addSeckillActivity(com.aiolos.plaza.order.model.bo.SeckillActivityAddReq req);
-
-    /**
-     * 开启秒杀活动(预热)
-     * @param activityId 活动ID
-     */
-    void startSeckillActivity(Long activityId);
 }

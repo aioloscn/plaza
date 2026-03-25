@@ -7,7 +7,7 @@ public class CartMqConstants {
     
     /**
      * 购物车异步落库 Binding Name (Output)
-     * 对应 application.yml 中的 spring.cloud.stream.bindings.cartSave-out-0
+     * 对应 application.yml 中的 spring.cloud.stream.bindings.cartChange-out-0
      */
-    public static final String BINDING_CART_SAVE_OUT = "cartSave-out-0";
+    public static final String BINDING_CART_CHANGE_OUT = "cartChange-out-0";
 }

@@ -52,6 +52,16 @@ public class Order implements Serializable {
     private Long shopId;
 
     /**
+     * 订单类型：1->普通订单；2->秒杀订单
+     */
+    private Integer orderType;
+
+    /**
+     * 秒杀活动ID
+     */
+    private Long activityId;
+
+    /**
      * 订单总金额
      */
     private BigDecimal totalAmount;

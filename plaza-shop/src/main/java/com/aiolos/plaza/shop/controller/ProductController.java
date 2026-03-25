@@ -19,7 +19,6 @@ public class ProductController {
 
     @Autowired
     private ShopProductService shopProductService;
-
     
     @GetMapping("/list")
     @Operation(summary = "根据店铺ID查询商品列表")
@@ -38,4 +37,5 @@ public class ProductController {
     public boolean updateProduct(@RequestBody Product product) {
         return shopProductService.updateProduct(product);
     }
+    
 }

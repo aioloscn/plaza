@@ -29,8 +29,8 @@ import java.util.stream.Collectors;
 public class CartFetchHandler implements ChainHandler<OrderCreateContext> {
 
     @Autowired
-    @Qualifier("cartRedisTemplate")
-    private StringRedisTemplate cartRedisTemplate;
+    @Qualifier("orderRedisTemplate")
+    private StringRedisTemplate orderRedisTemplate;
 
     @Autowired
     private CartItemMapper cartItemMapper;
@@ -45,7 +45,7 @@ public class CartFetchHandler implements ChainHandler<OrderCreateContext> {
 
         List<CartItem> cartItems = new ArrayList<>();
         String cartKey = RedisKeyEnum.CART_USER.getKey(userId);
-        Map<Object, Object> redisCart = cartRedisTemplate.opsForHash().entries(cartKey);
+        Map<Object, Object> redisCart = orderRedisTemplate.opsForHash().entries(cartKey);
 
         if (redisCart != null && !redisCart.isEmpty()) {
             for (Object json : redisCart.values()) {

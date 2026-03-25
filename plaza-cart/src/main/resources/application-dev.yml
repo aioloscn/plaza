@@ -14,14 +14,14 @@ spring:
         namespace: dev
     stream:
       function:
-        definition: cartSave
+        definition: cartChange
       bindings:
-        cartSave-out-0:
-          destination: cart-save-topic
+        cartChange-out-0:
+          destination: cart-change-topic
           content-type: application/json
-        cartSave-in-0:
-          destination: cart-save-topic
-          group: cart-save-group
+        cartChange-in-0:
+          destination: cart-change-topic
+          group: cart-change-group
           content-type: application/json
       rocketmq:
         binder:

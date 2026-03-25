@@ -43,6 +43,12 @@ public enum RedisKeyEnum {
     /** 秒杀活动价格 String (长期有效，由预热写入) */
     SECKILL_PRICE("seckill:price:%s", -1L),
 
+    /** 单个秒杀活动详情缓存 String (长期有效，由预热写入) */
+    SECKILL_ACTIVITY_INFO("seckill:info:%s", -1L),
+
+    /** 店铺的秒杀活动列表缓存 String (过期时间24小时) */
+    SECKILL_SHOP_LIST("seckill:shop:list:%s", 24 * 3600L),
+
     /** 已抢购成功的用户集合 Set (防止重复抢购) */
     SECKILL_BOUGHT_USERS("seckill:bought_users:%s", -1L),
 

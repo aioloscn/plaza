@@ -50,7 +50,7 @@ public class PlazaCartServiceImpl implements PlazaCartService {
     private StringRedisTemplate stringRedisTemplate;
 
     @Autowired
-    private CartSaveProducer cartSaveProducer;
+    private CartSaveProducer cartChangeProducer;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -154,7 +154,7 @@ public class PlazaCartServiceImpl implements PlazaCartService {
                         1 // 1:保存/更新
                 );
                 
-                cartSaveProducer.sendCartSaveMessage(message);
+                cartChangeProducer.sendCartSaveMessage(message);
             }
         } catch (JsonProcessingException e) {
             log.error("添加购物车失败", e);
@@ -190,7 +190,7 @@ public class PlazaCartServiceImpl implements PlazaCartService {
                             1,
                             1 // 1:保存/更新
                     );
-                    cartSaveProducer.sendCartSaveMessage(message);
+                    cartChangeProducer.sendCartSaveMessage(message);
                 }
             }
         } catch (JsonProcessingException e) {
@@ -225,7 +225,7 @@ public class PlazaCartServiceImpl implements PlazaCartService {
                     null, // status not needed
                     2 // 2 表示删除
             );
-            cartSaveProducer.sendCartSaveMessage(message);
+            cartChangeProducer.sendCartSaveMessage(message);
         }
     }
 
@@ -412,7 +412,7 @@ public class PlazaCartServiceImpl implements PlazaCartService {
                             null,
                             2 // 2 表示删除
                     );
-                    cartSaveProducer.sendCartSaveMessage(message);
+                    cartChangeProducer.sendCartSaveMessage(message);
                 }
             }
         }
@@ -470,7 +470,7 @@ public class PlazaCartServiceImpl implements PlazaCartService {
                             1,
                             1 // 1:保存/更新
                     );
-                    cartSaveProducer.sendCartSaveMessage(message);
+                    cartChangeProducer.sendCartSaveMessage(message);
                 }
                 // 删除临时购物车
                 stringRedisTemplate.delete(tempKey);
@@ -507,7 +507,7 @@ public class PlazaCartServiceImpl implements PlazaCartService {
                                     null,
                                     2 // 2 表示删除
                             );
-                            cartSaveProducer.sendCartSaveMessage(message);
+                            cartChangeProducer.sendCartSaveMessage(message);
                         }
                     }
                 }

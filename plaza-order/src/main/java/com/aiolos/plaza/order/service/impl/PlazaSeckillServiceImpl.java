@@ -6,14 +6,16 @@ import com.aiolos.plaza.order.chain.context.SeckillOrderContext;
 import com.aiolos.plaza.order.chain.handler.seckill.SeckillFreqLimitHandler;
 import com.aiolos.plaza.order.chain.handler.seckill.SeckillMessageSendHandler;
 import com.aiolos.plaza.order.chain.handler.seckill.SeckillStockDeductHandler;
-import com.aiolos.plaza.order.model.bo.SeckillActivityAddReq;
 import com.aiolos.plaza.order.model.bo.SeckillSubmitReq;
 import com.aiolos.plaza.order.service.PlazaSeckillService;
 import com.aiolos.plaza.model.po.SeckillActivity;
 import com.aiolos.plaza.service.SeckillActivityService;
-import com.aiolos.plaza.enums.RedisKeyEnum;
 import com.aiolos.common.exception.util.ExceptionUtil;
+import com.aiolos.plaza.enums.RedisKeyEnum;
 import com.aiolos.plaza.enums.exceptions.SeckillExceptionEnum;
+import com.alibaba.fastjson.JSON;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -40,14 +42,21 @@ public class PlazaSeckillServiceImpl implements PlazaSeckillService {
     private SeckillMessageSendHandler seckillMessageSendHandler;
 
     @Resource
-    private SeckillActivityService seckillActivityService;
-
-    @Resource
-    private StringRedisTemplate stringRedisTemplate;
+    @Qualifier("shopRedisTemplate")
+    private StringRedisTemplate shopRedisTemplate;
 
     @Override
     public boolean submitSeckill(SeckillSubmitReq req, Long userId) {
-        SeckillActivity activity = seckillActivityService.getById(req.getActivityId());
+        String infoKey = RedisKeyEnum.SECKILL_ACTIVITY_INFO.getKey(req.getActivityId());
+        String activityJson = shopRedisTemplate.opsForValue().get(infoKey);
+
+        if (StringUtils.isBlank(activityJson)) {
+            // 如果 Redis 没有，说明活动没开启或不存在，直接返回失败，阻断 DB 访问
+            ExceptionUtil.throwException(SeckillExceptionEnum.SECKILL_ACTIVITY_ERROR);
+        }
+        
+        SeckillActivity activity = JSON.parseObject(activityJson, SeckillActivity.class);
+        
         if (activity == null || activity.getStatus() != 1) {
             ExceptionUtil.throwException(SeckillExceptionEnum.SECKILL_ACTIVITY_ERROR);
         }
@@ -73,40 +82,4 @@ public class PlazaSeckillServiceImpl implements PlazaSeckillService {
         return context.isSuccess();
     }
 
-    @Override
-    public Long addSeckillActivity(SeckillActivityAddReq req) {
-        SeckillActivity activity = new SeckillActivity();
-        activity.setShopId(req.getShopId());
-        activity.setProductId(req.getProductId());
-        activity.setPrice(req.getPrice());
-        activity.setStock(req.getStock());
-        activity.setStartTime(req.getStartTime());
-        activity.setEndTime(req.getEndTime());
-        activity.setStatus(0); // 0:未开始
-
-        seckillActivityService.save(activity);
-        log.info("添加秒杀活动成功，活动ID: {}", activity.getId());
-        return activity.getId();
-    }
-
-    @Override
-    public void startSeckillActivity(Long activityId) {
-        SeckillActivity activity = seckillActivityService.getById(activityId);
-        if (activity == null) {
-            ExceptionUtil.throwException(SeckillExceptionEnum.SECKILL_ACTIVITY_ERROR);
-        }
-
-        // 将库存和价格预热到 Redis
-        String stockKey = RedisKeyEnum.SECKILL_STOCK.getKey(activityId);
-        String priceKey = RedisKeyEnum.SECKILL_PRICE.getKey(activityId);
-
-        stringRedisTemplate.opsForValue().set(stockKey, String.valueOf(activity.getStock()));
-        stringRedisTemplate.opsForValue().set(priceKey, activity.getPrice().toString());
-
-        // 更新状态为 1:进行中
-        activity.setStatus(1);
-        seckillActivityService.updateById(activity);
-        
-        log.info("开启秒杀活动成功，活动ID: {}, 预热库存: {}, 预热价格: {}", activityId, activity.getStock(), activity.getPrice());
-    }
 }

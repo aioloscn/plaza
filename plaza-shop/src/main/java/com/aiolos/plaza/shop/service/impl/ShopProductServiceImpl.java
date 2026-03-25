@@ -6,7 +6,9 @@ import com.aiolos.plaza.enums.RedisKeyEnum;
 import com.aiolos.plaza.mapper.ProductStockLogMapper;
 import com.aiolos.plaza.model.po.Product;
 import com.aiolos.plaza.model.po.ProductStockLog;
+import com.aiolos.plaza.model.po.SeckillActivity;
 import com.aiolos.plaza.service.ProductService;
+import com.aiolos.plaza.service.SeckillActivityService;
 import com.aiolos.plaza.shop.model.vo.ProductVO;
 import com.aiolos.plaza.shop.mq.producer.ProductMessageProducer;
 import com.aiolos.plaza.shop.service.ShopProductService;
@@ -15,6 +17,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -29,22 +32,20 @@ import java.util.concurrent.TimeUnit;
  */
 @Slf4j
 @Service
+@AllArgsConstructor
 public class ShopProductServiceImpl implements ShopProductService {
 
-    @Autowired
-    private ProductService productService;
-
-    @Autowired
-    private ProductStockLogMapper productStockLogMapper;
-
-    @Autowired
-    private StringRedisTemplate stringRedisTemplate;
-
-    @Autowired
-    private ProductMessageProducer productMessageProducer;
+    private final ProductService productService;
     
-    @Autowired
-    private ObjectMapper objectMapper;
+    private final SeckillActivityService seckillActivityService;
+
+    private final ProductStockLogMapper productStockLogMapper;
+
+    private final StringRedisTemplate stringRedisTemplate;
+
+    private final ProductMessageProducer productMessageProducer;
+    
+    private final ObjectMapper objectMapper;
 
     // 本地缓存 Caffeine (L1 缓存)
     private final Cache<Long, ProductVO> localProductCache = Caffeine.newBuilder()

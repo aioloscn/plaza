@@ -1,7 +1,9 @@
 package com.aiolos.plaza.order.mq.producer;
 
 import com.aiolos.plaza.enums.RedisKeyEnum;
+import com.aiolos.plaza.enums.PayType;
 import com.aiolos.plaza.enums.OrderState;
+import com.aiolos.plaza.enums.OrderType;
 import com.aiolos.plaza.mapper.OrderItemMapper;
 import com.aiolos.plaza.mapper.OrderMapper;
 import com.aiolos.plaza.mapper.ParentOrderMapper;
@@ -10,7 +12,9 @@ import com.aiolos.plaza.model.po.Order;
 import com.aiolos.plaza.model.po.OrderItem;
 import com.aiolos.plaza.model.po.ParentOrder;
 import com.aiolos.plaza.model.po.Product;
-import com.aiolos.plaza.mq.message.StockDeductMessage;
+import com.aiolos.plaza.model.po.Address;
+import com.aiolos.plaza.service.AddressService;
+import com.aiolos.plaza.mq.message.SeckillStockDeductMessage;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
@@ -46,6 +50,9 @@ public class SeckillOrderTransactionListener implements RocketMQLocalTransaction
 
     @Resource
     private ProductMapper productMapper;
+
+    @Resource
+    private AddressService addressService;
 
     @Resource
     private OrderMessageProducer orderMessageProducer;
@@ -94,7 +101,8 @@ public class SeckillOrderTransactionListener implements RocketMQLocalTransaction
             parentOrder.setTotalAmount(totalAmount);
             parentOrder.setPayAmount(totalAmount);
             parentOrder.setStatus(OrderState.CREATED.getCode());
-            parentOrder.setPayType(1);
+            parentOrder.setPayType(PayType.ALIPAY.getCode());
+            parentOrder.setOrderType(OrderType.SECKILL.getCode());
             parentOrder.setDeleteStatus(0);
             parentOrder.setCreateTime(now);
             parentOrder.setUpdateTime(now);
@@ -104,17 +112,34 @@ public class SeckillOrderTransactionListener implements RocketMQLocalTransaction
             order.setParentOrderSn(txContext.getParentOrderSn());
             order.setUserId(txContext.getUserId());
             order.setShopId(txContext.getShopId());
+            order.setOrderType(OrderType.SECKILL.getCode());
+            order.setActivityId(txContext.getActivityId());
             order.setTotalAmount(totalAmount);
             order.setPayAmount(totalAmount);
             order.setFreightAmount(BigDecimal.ZERO);
             order.setPromotionAmount(BigDecimal.ZERO);
-            order.setPayType(1);
+            order.setPayType(PayType.ALIPAY.getCode());
             order.setStatus(OrderState.CREATED.getCode());
             order.setDeleteStatus(0);
             order.setCreateTime(now);
             order.setUpdateTime(now);
             order.setConfirmStatus(0);
             order.setReceiverName("秒杀用户");
+            
+            // 查询地址信息并设置到订单中
+            if (txContext.getAddressId() != null) {
+                Address address = addressService.getById(txContext.getAddressId());
+                if (address != null) {
+                    order.setAddressId(address.getId());
+                    order.setReceiverName(address.getName());
+                    order.setReceiverPhone(address.getTel());
+                    order.setReceiverProvince(address.getProvince());
+                    order.setReceiverCity(address.getCity());
+                    order.setReceiverRegion(address.getCounty());
+                    order.setReceiverDetailAddress(address.getAddressDetail());
+                }
+            }
+            
             orderMapper.insert(order);
             OrderItem orderItem = new OrderItem();
             orderItem.setOrderId(order.getId());
@@ -144,7 +169,7 @@ public class SeckillOrderTransactionListener implements RocketMQLocalTransaction
     @Override
     public RocketMQLocalTransactionState checkLocalTransaction(Message message) {
         Object payload = message.getPayload();
-        if (!(payload instanceof StockDeductMessage stockDeductMessage)) {
+        if (!(payload instanceof SeckillStockDeductMessage stockDeductMessage)) {
             return RocketMQLocalTransactionState.ROLLBACK;
         }
         Long exists = orderMapper.selectCount(new LambdaQueryWrapper<Order>()

@@ -8,6 +8,7 @@ import com.aiolos.plaza.order.chain.ChainHandler;
 import com.aiolos.plaza.order.chain.context.SeckillOrderContext;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
@@ -21,7 +22,8 @@ import java.util.Arrays;
 public class SeckillStockDeductHandler implements ChainHandler<SeckillOrderContext> {
 
     @Autowired
-    private StringRedisTemplate stringRedisTemplate;
+    @Qualifier("shopRedisTemplate")
+    private StringRedisTemplate shopRedisTemplate;
 
     private DefaultRedisScript<Long> seckillScript;
 
@@ -40,7 +42,7 @@ public class SeckillStockDeductHandler implements ChainHandler<SeckillOrderConte
         String stockKey = RedisKeyEnum.SECKILL_STOCK.getKey(activityId);
         String boughtKey = RedisKeyEnum.SECKILL_BOUGHT_USERS.getKey(activityId);
 
-        Long result = stringRedisTemplate.execute(
+        Long result = shopRedisTemplate.execute(
                 seckillScript,
                 Arrays.asList(stockKey, boughtKey),
                 "1",
@@ -59,7 +61,7 @@ public class SeckillStockDeductHandler implements ChainHandler<SeckillOrderConte
             ExceptionUtil.throwException(SeckillExceptionEnum.SECKILL_SOLD_OUT);
         } else if (result == 1L) {
             String priceKey = RedisKeyEnum.SECKILL_PRICE.getKey(activityId);
-            String priceStr = stringRedisTemplate.opsForValue().get(priceKey);
+            String priceStr = shopRedisTemplate.opsForValue().get(priceKey);
             if (priceStr == null) {
                 ExceptionUtil.throwException(SeckillExceptionEnum.SECKILL_DATA_ERROR);
             }

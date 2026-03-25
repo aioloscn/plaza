@@ -12,6 +12,12 @@ public class OrderMqConstants {
     public static final String BINDING_STOCK_DEDUCT_OUT = "stockDeduct-out-0";
 
     /**
+     * 秒杀扣减库存 Binding Name (Output)
+     * 对应 application.yml 中的 spring.cloud.stream.bindings.seckillStockDeduct-out-0
+     */
+    public static final String BINDING_SECKILL_STOCK_DEDUCT_OUT = "seckillStockDeduct-out-0";
+
+    /**
      * 订单超时取消 Binding Name (Output)
      * 对应 application.yml 中的 spring.cloud.stream.bindings.orderTimeout-out-0
      */

@@ -4,6 +4,6 @@ server:
 spring:
   profiles:
     active: dev
-    include: stream
+    include: mq
   application:
     name: plaza-order

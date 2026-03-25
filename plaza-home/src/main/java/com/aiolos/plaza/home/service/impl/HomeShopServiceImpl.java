@@ -15,7 +15,6 @@ import com.aiolos.plaza.mapper.ShopMapper;
 import com.aiolos.plaza.model.po.Shop;
 import com.aiolos.plaza.service.ShopService;
 import com.alibaba.google.common.hash.BloomFilter;
-import com.alibaba.google.common.hash.Funnels;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

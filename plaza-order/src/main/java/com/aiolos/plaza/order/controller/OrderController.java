@@ -1,6 +1,7 @@
 package com.aiolos.plaza.order.controller;
 
 import com.aiolos.common.cloud.annotation.IgnoreAuth;
+import com.aiolos.plaza.enums.PayType;
 import com.aiolos.common.model.ContextInfo;
 import com.aiolos.common.enums.error.ErrorEnum;
 import com.aiolos.common.exception.util.ExceptionUtil;
@@ -35,10 +36,13 @@ public class OrderController {
      * 发起支付
      */
     @PostMapping("/pay")
-    public String pay(@RequestParam String orderSn, @RequestParam(defaultValue = "1") Integer payType, jakarta.servlet.http.HttpServletRequest request) {
+    public String pay(@RequestParam String orderSn, @RequestParam(required = false) Integer payType, jakarta.servlet.http.HttpServletRequest request) {
         Long userId = ContextInfo.getUserId();
         if (userId == null) {
             ExceptionUtil.throwException(ErrorEnum.USER_NOT_LOGGED_IN);
+        }
+        if (payType == null) {
+            payType = PayType.ALIPAY.getCode();
         }
         String ua = request.getHeader("User-Agent");
         boolean isMobile = false;

@@ -2,6 +2,7 @@ package com.aiolos.plaza.order.chain.handler.order;
 
 import com.aiolos.common.exception.util.ExceptionUtil;
 import com.aiolos.plaza.enums.OrderState;
+import com.aiolos.plaza.enums.OrderType;
 import com.aiolos.plaza.enums.RedisKeyEnum;
 import com.aiolos.plaza.enums.exceptions.OrderExceptionEnum;
 import com.aiolos.plaza.mapper.OrderItemMapper;
@@ -121,6 +122,7 @@ public class OrderBuildHandler implements ChainHandler<OrderCreateContext> {
             order.setParentOrderSn(parentOrderSn);
             order.setUserId(context.getUserId());
             order.setShopId(shopId);
+            order.setOrderType(OrderType.NORMAL.getCode());
             order.setTotalAmount(totalAmount);
             order.setPayAmount(totalAmount);
             order.setFreightAmount(BigDecimal.ZERO);
@@ -174,6 +176,7 @@ public class OrderBuildHandler implements ChainHandler<OrderCreateContext> {
         parentOrder.setPayAmount(context.getParentTotalAmount());
         parentOrder.setStatus(OrderState.CREATED.getCode());
         parentOrder.setPayType(req.getPayType());
+        parentOrder.setOrderType(OrderType.NORMAL.getCode());
         parentOrder.setDeleteStatus(0);
         parentOrder.setCreateTime(LocalDateTime.now());
         parentOrder.setUpdateTime(LocalDateTime.now());

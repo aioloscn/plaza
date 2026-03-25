@@ -28,7 +28,7 @@ spring:
             max-active: 10
             max-idle: 5
             min-idle: 1
-      cart:
+      order:
         host: ${REDIS_HOST:127.0.0.1}
         port: 6379
         database: 3
@@ -43,7 +43,7 @@ alipay:
   merchant-private-key: MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCU5ET2y6JBZ4UAgKmqDBqgtImbY8XOcAll04RlnT+Qu76ftITxJKF1UNshYSbNOmBJaapEdV7+Ml/KOSmEhokj/yCP9/Zm18WNtiMH5LyVxZGaN8mT58XPTU+8lN8Z9XcbJQwCS9V2EatlCDig2z15kawVGpuSHbn6hMhG6LbnbyqoJfrqJu4Mh+tEA8FzbUXepz1LDWtKioIaGSjWJMHGMuiPEXubXwity9rwf47B/dQ/1uNs1tOBfVCVvwCpSpwiceXzmMTqDMsK18iOwzOVuVvAmHvda7YhaCmW1dHEnwitikxuKcYOUidnMKTtif4yAl7K4JuBqM+WkdZnZn/lAgMBAAECggEAVw7iBCwtQ3D0I8cXbYaGS1FE5McB8iMwW4nB8Ghxsn8Uhu1WjmmMvrv4ZRwZRAbOJh7SoBTA5oEt4WBrFkJUDegvcf7a5Gdl6+aDtSnZ2vkamcHk68apsvzRksK5cMRGUGjpDK6qsc7DGOAlvGh1GZBDvlNAg789722UbWHFEKzaNWZ20I7dPlM2pwX0KD7+GjCz2FDtDHuc+sGTzyNGJ/1V0AlGb8jxZZDtlWms/SdR+GblF+5hLBqrMxTa81ekHwUDYluEWC6eyLiVLhqEMN4Mpo6YTpGGOt6tfBw4Z3UaYvoGm+1g5eqsmS0hDF9xK6UAH/Few3BRbz2QA0z6AQKBgQDW9CM+Rc/SLdhN0nYqO8ydgZslQyehroSSJi9H320EbKsm/WqNpYLjc56F6SW20PNptgHFpboKY8RrL6ExYXIuyaWl0Qk2R3xf31+0K6ffElX02LbxPbzhfBYQ3mGi7m026Sr760cmaH+gAPIOtzydT4kZ7lbY2yiBfLozQzw3vQKBgQCxUryki4EGMKrFkMmWeykc6xx2CIHPZhfU3gLLJ04Y/EypNzrSNyxpU2Mu7wnfzkXaPVjteL1FyTNXrbtgs8lOTfDlw6Z+XPWYp9bMMTEDakEbaT+39rtpWlvEhsrXDlQC/TU+MYQMOa4QFcx3r2eVL7am2JK/aV3aqdQ4x9U3SQKBgQChTtLH36Hmi0rgk8jjRr71kBZ6bxvlpE6OUqN2nz9za41BFDmLFKLVx6U1vtHzkHiqYtCPnx+uvlHfUf34TbVfUSnC9syf9CNs2vc6AOzYZS0mMh+PiBIfcHwqqofAuoYxB+ee52AcfZ0Q2MTNsEqHjvFHCWoZENYj3hLpd1JQTQKBgFdYY+fBd+quqk/rBAGF5TiDb1+MzTR2G6MVQNcFI2kXTkPEGstVtiCjnKWPxZNirfHUait/X+wyMYIs57G4nZ5eshzbhPWVoLxzYFDwoi4Gds+jxmk9tg8tHSrvIpdQTX2zcDiUd3D2MJFny3HhCurnt9bzs0VqB3sgUJMvjA1RAoGBAIbb3yPbPhu1bURgg6CtFA5fWM/2cG3CEbS6n1RJapyBIalHnMB4WUAH+/MJZSNysdBHBCxxNdG6H/bzlEKKLf3CKd3bSLUoCSs5tB0maQkpRaEPCvQlDeQJ8EqK9jyr9U2cVGHXS85ijND5siwAAQufetGegltD5a8Gznv2c25V
   alipay-public-key: MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtB0jamy8LGwfz1OiORqHayLzizUR8/z7396qcywcK7wq0/VGn6F4qQdBIIZaB0u4WYhWHuBRZ4dDCjWJS3/uRVcJf8rx+8DmsUh0SXa+IweizLkzTY+pADR4LT8TwcoalXKK1IP/lF4uRp5RZ84BljkWzR4OGf+TALdyyY4vqrpvmZDlQowepSPnIkyNAUqQD2xQDsTKZBvErUZrYJPFXsX2LL5HuTmnw6jKIoQ9jDXGQghHeDqlwa0Mx3UzibvdllarxI63XA7x6dX01jR7DIJ+qlFLFSBFUTC4f8V6JT1BCj+oz4WNuFLB3ydFcegt9UtpYa1073LAYbcy4jia/wIDAQAB
   notify-url: https://leann-wicked-apocalyptically.ngrok-free.dev/plaza-order/order/pay/notify # 必须是公网可访问的地址
-  return-url: http://live.aiolos.com:3000/pay/success # 支付成功后的跳转地址
+  return-url: http://plaza.aiolos.com:3000/pay/success # 支付成功后的跳转地址
   gateway-url: https://openapi-sandbox.dl.alipaydev.com/gateway.do
   sign-type: RSA2
   charset: utf-8

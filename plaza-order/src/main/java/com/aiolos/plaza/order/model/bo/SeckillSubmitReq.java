@@ -7,5 +7,6 @@ public class SeckillSubmitReq {
     private Long activityId;
     private Long shopId;
     private Long productId;
+    private Long addressId;
     // 购买数量默认1
 }

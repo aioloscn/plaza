@@ -4,6 +4,7 @@ import com.aiolos.plaza.mq.constant.CartMqConstants;
 import com.aiolos.plaza.mq.constant.OrderMqConstants;
 import com.aiolos.plaza.mq.message.CartAsyncSaveMessage;
 import com.aiolos.plaza.mq.message.SeckillOrderMessage;
+import com.aiolos.plaza.mq.message.SeckillStockDeductMessage;
 import com.aiolos.plaza.mq.message.StockDeductMessage;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -49,7 +50,7 @@ public class OrderMessageProducer {
      */
     public void sendCartSaveMessage(CartAsyncSaveMessage message) {
         try {
-            streamBridge.send(CartMqConstants.BINDING_CART_SAVE_OUT, MessageBuilder.withPayload(message).build());
+            streamBridge.send(CartMqConstants.BINDING_CART_CHANGE_OUT, MessageBuilder.withPayload(message).build());
             log.info("异步发送购物车消息成功: {}", message);
         } catch (Exception e) {
             log.error("异步发送购物车消息失败: {}", message, e);
@@ -87,7 +88,7 @@ public class OrderMessageProducer {
         int random = (int) (Math.random() * 9000 + 1000);
         String parentOrderSn = "P" + dateStr + random;
         String orderSn = "D" + dateStr + random;
-        StockDeductMessage stockDeductMessage = new StockDeductMessage(message.productId(), message.count(), orderSn);
+        SeckillStockDeductMessage stockDeductMessage = new SeckillStockDeductMessage(message.activityId(), message.productId(), message.count(), orderSn);
         SeckillOrderTxContext txContext = SeckillOrderTxContext.builder()
                 .activityId(message.activityId())
                 .shopId(message.shopId())
@@ -97,16 +98,17 @@ public class OrderMessageProducer {
                 .count(message.count())
                 .parentOrderSn(parentOrderSn)
                 .orderSn(orderSn)
+                .addressId(message.addressId())
                 .build();
         // 回查补偿需要的上下文字段，放入消息头，避免仅靠 payload 无法恢复活动维度信息
-        Message<StockDeductMessage> txMessage = MessageBuilder.withPayload(stockDeductMessage)
+        Message<SeckillStockDeductMessage> txMessage = MessageBuilder.withPayload(stockDeductMessage)
                 .setHeader("activityId", message.activityId())
                 .setHeader("userId", message.userId())
                 .setHeader("count", message.count())
                 .build();
-        // sendMessageInTransaction 会先发半消息，再触发本地事务回调
+        // sendMessageInTransaction 会先发半消息，再触发本地事务回调；会自动调用 SeckillOrderTransactionListener.executeLocalTransaction
         TransactionSendResult sendResult = seckillTxRocketMQTemplate.sendMessageInTransaction(
-                "stock-deduct-topic",
+                "seckill-stock-deduct-topic",
                 txMessage,
                 txContext
         );

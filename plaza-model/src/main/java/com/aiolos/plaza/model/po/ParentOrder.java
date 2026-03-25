@@ -62,6 +62,11 @@ public class ParentOrder implements Serializable {
     private Integer payType;
 
     /**
+     * 订单类型：1->普通订单；2->秒杀订单
+     */
+    private Integer orderType;
+
+    /**
      * 第三方支付流水号
      */
     private String tradeNo;

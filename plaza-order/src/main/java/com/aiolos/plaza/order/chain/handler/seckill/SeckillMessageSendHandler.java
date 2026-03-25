@@ -23,6 +23,7 @@ public class SeckillMessageSendHandler implements ChainHandler<SeckillOrderConte
                 .productId(context.getReq().getProductId())
                 .price(context.getSeckillPrice())
                 .count(1)
+                .addressId(context.getReq().getAddressId())
                 .build();
 
         orderMessageProducer.sendSeckillOrderTransactionMessage(message);

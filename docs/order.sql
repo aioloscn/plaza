@@ -3,8 +3,11 @@ DROP TABLE IF EXISTS `orders`;
 CREATE TABLE `orders` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键',
   `order_sn` varchar(64) DEFAULT NULL COMMENT '订单号',
+  `parent_order_sn` varchar(64) DEFAULT NULL COMMENT '父订单号（支付单号）',
   `user_id` bigint(20) DEFAULT NULL COMMENT '用户ID',
   `shop_id` bigint(20) DEFAULT NULL COMMENT '店铺ID',
+  `order_type` int(1) DEFAULT '1' COMMENT '订单类型：1->普通订单；2->秒杀订单',
+  `activity_id` bigint(20) DEFAULT NULL COMMENT '秒杀活动ID',
   `total_amount` decimal(10,2) DEFAULT NULL COMMENT '订单总金额',
   `pay_amount` decimal(10,2) DEFAULT NULL COMMENT '应付金额',
   `freight_amount` decimal(10,2) DEFAULT NULL COMMENT '运费金额',
@@ -29,6 +32,25 @@ CREATE TABLE `orders` (
   `update_time` datetime DEFAULT NULL COMMENT '修改时间',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COMMENT='订单表';
+
+DROP TABLE IF EXISTS `parent_order`;
+CREATE TABLE `parent_order` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `parent_order_sn` varchar(64) DEFAULT NULL COMMENT '父订单编号（支付单号）',
+  `user_id` bigint(20) DEFAULT NULL COMMENT '用户ID',
+  `total_amount` decimal(10,2) DEFAULT NULL COMMENT '总金额',
+  `pay_amount` decimal(10,2) DEFAULT NULL COMMENT '应付总金额',
+  `status` int(1) DEFAULT NULL COMMENT '订单状态：0->待付款；1->待发货；2->已发货；3->已完成；4->已关闭；5->无效订单',
+  `pay_type` int(1) DEFAULT NULL COMMENT '支付方式：1->支付宝；2->微信',
+  `order_type` int(1) DEFAULT '1' COMMENT '订单类型：1->普通订单；2->秒杀订单',
+  `trade_no` varchar(64) DEFAULT NULL COMMENT '第三方支付流水号',
+  `buyer_id` varchar(64) DEFAULT NULL COMMENT '买家在支付平台的账号/ID',
+  `payment_time` datetime DEFAULT NULL COMMENT '支付时间',
+  `delete_status` int(1) DEFAULT '0' COMMENT '删除状态：0->未删除；1->已删除',
+  `create_time` datetime DEFAULT NULL COMMENT '创建时间',
+  `update_time` datetime DEFAULT NULL COMMENT '更新时间',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COMMENT='父订单表';
 
 DROP TABLE IF EXISTS `order_item`;
 CREATE TABLE `order_item` (

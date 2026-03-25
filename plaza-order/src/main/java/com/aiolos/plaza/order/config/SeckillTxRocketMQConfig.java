@@ -7,8 +7,11 @@ import org.apache.rocketmq.spring.support.RocketMQMessageConverter;
 import org.apache.rocketmq.spring.support.RocketMQUtil;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
+import org.apache.rocketmq.spring.autoconfigure.RocketMQAutoConfiguration;
 
 @Configuration
+@Import(RocketMQAutoConfiguration.class)
 public class SeckillTxRocketMQConfig {
 
     private static final String SECKILL_TX_PRODUCER_GROUP = "seckill-order-tx-producer-group";
