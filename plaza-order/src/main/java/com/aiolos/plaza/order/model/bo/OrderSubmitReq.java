@@ -26,4 +26,6 @@ public class OrderSubmitReq implements Serializable {
      * 支付方式：1->支付宝；2->微信
      */
     private Integer payType;
+
+    private String confirmToken;
 }

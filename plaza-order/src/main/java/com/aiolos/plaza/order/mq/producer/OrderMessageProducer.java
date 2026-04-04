@@ -6,17 +6,16 @@ import com.aiolos.plaza.mq.message.CartAsyncSaveMessage;
 import com.aiolos.plaza.mq.message.SeckillOrderMessage;
 import com.aiolos.plaza.mq.message.SeckillStockDeductMessage;
 import com.aiolos.plaza.mq.message.StockDeductMessage;
+import com.aiolos.plaza.orderno.provider.api.OrderNoApi;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.dubbo.config.annotation.DubboReference;
 import org.apache.rocketmq.client.producer.TransactionSendResult;
 import org.apache.rocketmq.spring.core.RocketMQTemplate;
 import org.springframework.cloud.stream.function.StreamBridge;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Component;
-
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 
 /**
  * 订单相关消息生产者
@@ -30,6 +29,9 @@ public class OrderMessageProducer {
 
     @Resource(name = "seckillTxRocketMQTemplate")
     private RocketMQTemplate seckillTxRocketMQTemplate;
+
+    @DubboReference
+    private OrderNoApi orderNoApi;
 
     /**
      * 发送库存扣减消息
@@ -78,16 +80,14 @@ public class OrderMessageProducer {
 
     /**
      * 秒杀事务消息发送流程：
-     * 1) 先发送半消息到 stock-deduct-topic
+     * 1) 先发送半消息到 seckill-order-tx-topic
      * 2) RocketMQ 回调本地事务监听器 executeLocalTransaction 执行下单事务
      * 3) 监听器返回 COMMIT/ROLLBACK 后，Broker 决定半消息是否对消费者可见
      * 4) 若事务状态不明确，Broker 后续会回查 checkLocalTransaction
      */
     public void sendSeckillOrderTransactionMessage(SeckillOrderMessage message) {
-        String dateStr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS"));
-        int random = (int) (Math.random() * 9000 + 1000);
-        String parentOrderSn = "P" + dateStr + random;
-        String orderSn = "D" + dateStr + random;
+        String parentOrderSn = orderNoApi.nextParentOrderSn();
+        String orderSn = orderNoApi.nextSeckillOrderSn();
         SeckillStockDeductMessage stockDeductMessage = new SeckillStockDeductMessage(message.activityId(), message.productId(), message.count(), orderSn);
         SeckillOrderTxContext txContext = SeckillOrderTxContext.builder()
                 .activityId(message.activityId())
@@ -108,7 +108,7 @@ public class OrderMessageProducer {
                 .build();
         // sendMessageInTransaction 会先发半消息，再触发本地事务回调；会自动调用 SeckillOrderTransactionListener.executeLocalTransaction
         TransactionSendResult sendResult = seckillTxRocketMQTemplate.sendMessageInTransaction(
-                "seckill-stock-deduct-topic",
+                "seckill-order-tx-topic",
                 txMessage,
                 txContext
         );

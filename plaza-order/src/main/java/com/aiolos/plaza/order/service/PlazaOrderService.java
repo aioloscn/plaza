@@ -1,10 +1,13 @@
 package com.aiolos.plaza.order.service;
 
 import com.aiolos.plaza.order.model.bo.OrderSubmitReq;
+import com.aiolos.plaza.order.model.vo.OrderConfirmVO;
 import com.aiolos.plaza.order.model.vo.OrderListVO;
 import java.util.List;
 
 public interface PlazaOrderService {
+
+    OrderConfirmVO confirm(Long userId, OrderSubmitReq req);
 
     /**
      * 提交订单
@@ -41,25 +44,15 @@ public interface PlazaOrderService {
     void cancelTimeoutOrders();
 
     /**
+     * 父订单状态对账：
+     * 按批次扫描父订单并基于子订单聚合规则做状态自愈。
+     * @param batchSize 扫描批次大小，<=0 时使用默认值
+     */
+    void reconcileParentOrderStatus(int batchSize);
+
+    /**
      * 取消单个订单（MQ触发）
      * @param orderId 订单ID
      */
     void cancelOrder(Long orderId);
-    /**
-     * 支付
-     *
-     * @param userId  用户ID
-     * @param orderSn 订单号
-     * @param payType 支付方式
-     * @return 支付表单HTML
-     */
-    String pay(Long userId, String orderSn, Integer payType, boolean isMobile);
-
-    /**
-     * 支付回调处理
-     *
-     * @param params 支付宝回调参数
-     * @return success/fail
-     */
-    String payNotify(java.util.Map<String, String> params);
 }

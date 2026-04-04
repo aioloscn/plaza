@@ -15,7 +15,7 @@ import java.util.function.Consumer;
 
 @Slf4j
 @Component
-public class CartSaveConsumer {
+public class CartChangeConsumer {
 
     @Resource
     private CartItemService cartItemService;

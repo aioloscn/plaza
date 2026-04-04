@@ -2,7 +2,7 @@ spring:
   cloud:
     stream:
       function:
-        definition: orderTimeout;stockDeduct;cartChange;orderPaid;seckillStockDeduct
+        definition: orderTimeout;stockDeduct;cartChange;orderPaid
       default:
         content-type: application/json
         consumer:
@@ -26,20 +26,11 @@ spring:
         stockDeduct-in-0:
           destination: stock-deduct-topic
           group: stock-deduct-group
-        seckillStockDeduct-in-0:
-          destination: seckill-stock-deduct-topic
-          group: seckill-stock-deduct-group
-          consumer:
-            max-attempts: 1 # 不做额外重试
         cartChange-out-0:
           destination: cart-change-topic
       rocketmq:
         binder:
           name-server: ${ROCKETMQ_HOST:127.0.0.1}:9876
-        bindings:
-          seckillStockDeduct-in-0:
-            consumer:
-              max-reconsume-times: 5  # 最多重投5次后进入死信队列
 
 rocketmq:
   name-server: ${ROCKETMQ_HOST:127.0.0.1}:9876

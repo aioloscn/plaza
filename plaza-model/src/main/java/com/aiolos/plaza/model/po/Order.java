@@ -36,6 +36,8 @@ public class Order implements Serializable {
      */
     private String orderSn;
 
+    private String reservationNo;
+
     /**
      * 父订单号（支付单号）
      */

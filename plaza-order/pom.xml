@@ -21,6 +21,10 @@
         </dependency>
         <dependency>
             <groupId>com.aiolos</groupId>
+            <artifactId>common-dubbo</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.aiolos</groupId>
             <artifactId>common-redis</artifactId>
         </dependency>
         <dependency>
@@ -46,6 +50,10 @@
         <dependency>
             <groupId>com.aiolos</groupId>
             <artifactId>plaza-mq</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.aiolos</groupId>
+            <artifactId>plaza-order-no-api</artifactId>
         </dependency>
         <dependency>
             <groupId>com.alibaba.cloud</groupId>

@@ -45,7 +45,7 @@ public class ProductStockLog implements Serializable {
     private Integer amount;
 
     /**
-     * 操作类型：1-下单扣减，2-取消回滚，3-后台修改
+     * 操作类型：1-下单扣减，2-取消回滚，3-后台修改，4-预占冻结，5-支付确认，6-预占释放，7-预占过期
      */
     @TableField("type")
     private Integer type;

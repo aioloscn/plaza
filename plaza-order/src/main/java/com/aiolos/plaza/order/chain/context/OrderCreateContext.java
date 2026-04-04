@@ -10,7 +10,6 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import com.aiolos.plaza.mq.message.StockDeductMessage;
 import com.aiolos.plaza.model.po.MqLocalMessage;
 
 @Data
@@ -22,7 +21,6 @@ public class OrderCreateContext extends TradeContext {
     private Map<Long, List<CartItem>> shopCartMap;
     private String parentOrderSn;
     private BigDecimal parentTotalAmount = BigDecimal.ZERO;
-    private List<StockDeductMessage> stockDeductMessages = new ArrayList<>();
     private List<Long> allCartIds = new ArrayList<>();
     private List<Long> orderIds = new ArrayList<>();
     private List<MqLocalMessage> localMessages = new ArrayList<>();

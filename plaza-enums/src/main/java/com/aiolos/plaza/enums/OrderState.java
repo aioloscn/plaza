@@ -24,7 +24,31 @@ public enum OrderState {
     /**
      * 无效订单
      */
-    INVALID(5, "无效订单");
+    INVALID(5, "无效订单"),
+    /**
+     * 支付中
+     */
+    PAYING(6, "支付中"),
+    /**
+     * 关闭确认中（软关单）
+     */
+    CLOSING(7, "关闭确认中"),
+    /**
+     * 支付补偿中
+     */
+    PAY_RECOVERING(8, "支付补偿中"),
+    /**
+     * 退款处理中（中间态）
+     */
+    REFUNDING(9, "退款中"),
+    /**
+     * 已退款（终态）
+     */
+    REFUNDED(10, "已退款"),
+    /**
+     * 退款失败（终态）
+     */
+    REFUND_FAILED(11, "退款失败");
 
     private final Integer code;
     private final String desc;

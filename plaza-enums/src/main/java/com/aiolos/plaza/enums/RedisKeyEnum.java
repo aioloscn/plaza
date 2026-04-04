@@ -53,7 +53,9 @@ public enum RedisKeyEnum {
     SECKILL_BOUGHT_USERS("seckill:bought_users:%s", -1L),
 
     /** 单个用户秒杀防刷频控标记 (如10秒过期) */
-    SECKILL_LIMIT("seckill:limit:%s", 10L);
+    SECKILL_LIMIT("seckill:limit:%s", 10L),
+
+    ORDER_CONFIRM_TOKEN("order:confirm:token:%s:%s", 600L);
 
     private final String keyTemplate;
     private final Long defaultExpireSeconds;

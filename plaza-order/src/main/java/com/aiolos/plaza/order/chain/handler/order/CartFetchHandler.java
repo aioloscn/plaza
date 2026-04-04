@@ -43,11 +43,19 @@ public class CartFetchHandler implements ChainHandler<OrderCreateContext> {
         Long userId = context.getUserId();
         var req = context.getReq();
 
-        List<CartItem> cartItems = new ArrayList<>();
+        LambdaQueryWrapper<CartItem> cartQuery = new LambdaQueryWrapper<>();
+        cartQuery.eq(CartItem::getUserId, userId);
+        if (req.getShopId() != null) {
+            cartQuery.eq(CartItem::getShopId, req.getShopId());
+        }
+        cartQuery.eq(CartItem::getChecked, 1);
+        List<CartItem> cartItems = cartItemMapper.selectList(cartQuery);
+
         String cartKey = RedisKeyEnum.CART_USER.getKey(userId);
         Map<Object, Object> redisCart = orderRedisTemplate.opsForHash().entries(cartKey);
 
-        if (redisCart != null && !redisCart.isEmpty()) {
+        if ((cartItems == null || cartItems.isEmpty()) && redisCart != null && !redisCart.isEmpty()) {
+            cartItems = new ArrayList<>();
             for (Object json : redisCart.values()) {
                 try {
                     CartItemDTO cartItemDto = objectMapper.readValue(json.toString(), CartItemDTO.class);
@@ -68,16 +76,6 @@ public class CartFetchHandler implements ChainHandler<OrderCreateContext> {
                     log.error("解析购物车Redis数据失败", e);
                 }
             }
-        }
-
-        if (cartItems.isEmpty() && (redisCart == null || redisCart.isEmpty())) {
-            LambdaQueryWrapper<CartItem> cartQuery = new LambdaQueryWrapper<>();
-            cartQuery.eq(CartItem::getUserId, userId);
-            if (req.getShopId() != null) {
-                cartQuery.eq(CartItem::getShopId, req.getShopId());
-            }
-            cartQuery.eq(CartItem::getChecked, 1);
-            cartItems = cartItemMapper.selectList(cartQuery);
         }
 
         if (cartItems == null || cartItems.isEmpty()) {

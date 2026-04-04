@@ -2,6 +2,7 @@ package com.aiolos.plaza.order.config;
 
 import com.aiolos.plaza.enums.OrderEvent;
 import com.aiolos.plaza.enums.OrderState;
+import com.aiolos.plaza.order.statemachine.action.OrderStockConfirmAction;
 import com.aiolos.plaza.order.statemachine.action.OrderStockReleaseAction;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
@@ -22,6 +23,9 @@ public class OrderStateMachineConfig extends EnumStateMachineConfigurerAdapter<O
     @Autowired
     private OrderStockReleaseAction orderStockReleaseAction;
 
+    @Autowired
+    private OrderStockConfirmAction orderStockConfirmAction;
+
     @Override
     public void configure(StateMachineStateConfigurer<OrderState, OrderEvent> states) throws Exception {
         states.withStates()
@@ -33,7 +37,25 @@ public class OrderStateMachineConfig extends EnumStateMachineConfigurerAdapter<O
     public void configure(StateMachineTransitionConfigurer<OrderState, OrderEvent> transitions) throws Exception {
         transitions
                 .withExternal()
-                    .source(OrderState.CREATED).target(OrderState.PAID).event(OrderEvent.PAY)
+                    .source(OrderState.CREATED).target(OrderState.PAID).event(OrderEvent.PAY).action(orderStockConfirmAction)
+                .and()
+                .withExternal()
+                    .source(OrderState.PAYING).target(OrderState.PAID).event(OrderEvent.PAY).action(orderStockConfirmAction)
+                .and()
+                .withExternal()
+                    .source(OrderState.CREATED).target(OrderState.CLOSING).event(OrderEvent.START_CLOSE)
+                .and()
+                .withExternal()
+                    .source(OrderState.PAYING).target(OrderState.CLOSING).event(OrderEvent.START_CLOSE)
+                .and()
+                .withExternal()
+                    .source(OrderState.CLOSING).target(OrderState.PAY_RECOVERING).event(OrderEvent.PAY_CALLBACK)
+                .and()
+                .withExternal()
+                    .source(OrderState.PAY_RECOVERING).target(OrderState.PAID).event(OrderEvent.RECOVER_SUCCESS).action(orderStockConfirmAction)
+                .and()
+                .withExternal()
+                    .source(OrderState.PAY_RECOVERING).target(OrderState.REFUNDING).event(OrderEvent.RECOVER_FAIL)
                 .and()
                 .withExternal()
                     .source(OrderState.PAID).target(OrderState.DELIVERED).event(OrderEvent.DELIVER)
@@ -45,6 +67,9 @@ public class OrderStateMachineConfig extends EnumStateMachineConfigurerAdapter<O
                     .source(OrderState.CREATED).target(OrderState.CLOSED).event(OrderEvent.CANCEL).action(orderStockReleaseAction)
                 .and()
                 .withExternal()
-                    .source(OrderState.PAID).target(OrderState.CLOSED).event(OrderEvent.CANCEL).action(orderStockReleaseAction);
+                    .source(OrderState.PAYING).target(OrderState.CLOSED).event(OrderEvent.CANCEL).action(orderStockReleaseAction)
+                .and()
+                .withExternal()
+                    .source(OrderState.CLOSING).target(OrderState.CLOSED).event(OrderEvent.CANCEL).action(orderStockReleaseAction);
     }
 }

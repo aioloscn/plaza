@@ -1,5 +1,7 @@
 package com.aiolos.plaza.cart.service.impl;
 
+import com.aiolos.common.enums.error.ErrorEnum;
+import com.aiolos.common.exception.util.ExceptionUtil;
 import com.aiolos.plaza.cart.model.bo.CartAddReq;
 import com.aiolos.plaza.cart.model.bo.CartCheckReq;
 import com.aiolos.plaza.cart.model.bo.CartUpdateReq;
@@ -20,7 +22,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.BoundHashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -61,7 +62,8 @@ public class PlazaCartServiceImpl implements PlazaCartService {
         } else if (deviceId != null && !deviceId.isEmpty()) {
             return RedisKeyEnum.CART_TEMP.getKey(deviceId);
         }
-        throw new RuntimeException("用户未登录且无设备ID");
+        ExceptionUtil.throwException(ErrorEnum.NULL_POINT_ERROR.setErrMsg("用户未登录且无设备ID"));
+        return null;
     }
 
     private String getCartEmptyMarkKey(Long userId, String deviceId) {
@@ -135,8 +137,8 @@ public class PlazaCartServiceImpl implements PlazaCartService {
             }
             setCartExpire(cartKey, userId);
             
-            // 异步落库到 MySQL
-            if (userId != null && userId > 0) {
+            // 异步落库到 MySQL，匿名用户userId为负数
+            if (userId > 0) {
                 // 重新获取一下最新的 itemVO，确保数据一致
                 String json = hashOps.get(productIdStr);
                 CartItemVO currentItem = objectMapper.readValue(json, CartItemVO.class);

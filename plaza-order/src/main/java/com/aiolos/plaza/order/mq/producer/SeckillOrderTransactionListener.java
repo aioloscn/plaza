@@ -15,6 +15,8 @@ import com.aiolos.plaza.model.po.Product;
 import com.aiolos.plaza.model.po.Address;
 import com.aiolos.plaza.service.AddressService;
 import com.aiolos.plaza.mq.message.SeckillStockDeductMessage;
+import com.aiolos.plaza.order.coreflow.inventory.model.InventoryReserveItem;
+import com.aiolos.plaza.order.coreflow.inventory.service.OrderInventoryService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
@@ -33,6 +35,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.List;
 
 @Slf4j
 @Component
@@ -59,6 +62,9 @@ public class SeckillOrderTransactionListener implements RocketMQLocalTransaction
 
     @Resource
     private StringRedisTemplate stringRedisTemplate;
+
+    @Resource
+    private OrderInventoryService orderInventoryService;
 
     private DefaultRedisScript<Long> seckillRollbackScript;
 
@@ -107,9 +113,16 @@ public class SeckillOrderTransactionListener implements RocketMQLocalTransaction
             parentOrder.setCreateTime(now);
             parentOrder.setUpdateTime(now);
             parentOrderMapper.insert(parentOrder);
+            String reservationNo = orderInventoryService.reserve(
+                    txContext.getOrderSn(),
+                    txContext.getUserId(),
+                    List.of(new InventoryReserveItem(txContext.getProductId(), txContext.getCount())),
+                    now.plusMinutes(10)
+            );
             Order order = new Order();
             order.setOrderSn(txContext.getOrderSn());
             order.setParentOrderSn(txContext.getParentOrderSn());
+            order.setReservationNo(reservationNo);
             order.setUserId(txContext.getUserId());
             order.setShopId(txContext.getShopId());
             order.setOrderType(OrderType.SECKILL.getCode());

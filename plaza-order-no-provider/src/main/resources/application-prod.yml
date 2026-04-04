@@ -1,0 +1,31 @@
+config:
+  nacos:
+    host: ${NACOS_HOST:127.0.0.1}:8848
+    username: nacos
+    password: nacos
+
+spring:
+  cloud:
+    nacos:
+      username: ${config.nacos.username}
+      password: ${config.nacos.password}
+      discovery:
+        server-addr: ${config.nacos.host}
+        namespace: prod
+
+dubbo:
+  protocol:
+    name: dubbo
+    port: 29951
+  application:
+    name: dubbo-plaza-order-no-provider
+    qos-enable: false
+  registry:
+    address: nacos://${config.nacos.host}?namespace=prod&username=${config.nacos.username}&password=${config.nacos.password}
+
+order-no:
+  instance-id: ${ORDER_NO_INSTANCE_ID:1}
+  worker-id: 1
+  datacenter-id: 1
+  epoch-ms: 1704067200000
+  max-clock-backward-ms: 3000

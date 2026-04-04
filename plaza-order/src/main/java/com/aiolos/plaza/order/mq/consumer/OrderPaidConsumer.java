@@ -3,6 +3,7 @@ package com.aiolos.plaza.order.mq.consumer;
 import com.aiolos.plaza.model.po.ParentOrder;
 import com.aiolos.plaza.model.po.PaymentLog;
 import com.aiolos.plaza.mapper.PaymentLogMapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
@@ -26,6 +27,14 @@ public class OrderPaidConsumer {
         return parentOrder -> {
             log.info("收到订单支付成功消息，父订单号: {}, 支付金额: {}", parentOrder.getParentOrderSn(), parentOrder.getPayAmount());
             try {
+                long exists = paymentLogMapper.selectCount(new LambdaQueryWrapper<PaymentLog>()
+                        .eq(PaymentLog::getOrderSn, parentOrder.getParentOrderSn())
+                        .eq(PaymentLog::getTradeNo, parentOrder.getTradeNo()));
+                if (exists > 0) {
+                    log.info("支付流水已存在，跳过重复消费，父订单号: {}, tradeNo: {}", parentOrder.getParentOrderSn(), parentOrder.getTradeNo());
+                    return;
+                }
+
                 // 记录支付流水日志
                 PaymentLog paymentLog = new PaymentLog();
                 paymentLog.setOrderSn(parentOrder.getParentOrderSn());

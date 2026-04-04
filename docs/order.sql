@@ -3,6 +3,7 @@ DROP TABLE IF EXISTS `orders`;
 CREATE TABLE `orders` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键',
   `order_sn` varchar(64) DEFAULT NULL COMMENT '订单号',
+  `reservation_no` varchar(64) DEFAULT NULL COMMENT '库存预占单号',
   `parent_order_sn` varchar(64) DEFAULT NULL COMMENT '父订单号（支付单号）',
   `user_id` bigint(20) DEFAULT NULL COMMENT '用户ID',
   `shop_id` bigint(20) DEFAULT NULL COMMENT '店铺ID',
@@ -30,7 +31,9 @@ CREATE TABLE `orders` (
   `comment_time` datetime DEFAULT NULL COMMENT '评价时间',
   `create_time` datetime DEFAULT NULL COMMENT '提交时间',
   `update_time` datetime DEFAULT NULL COMMENT '修改时间',
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_order_sn` (`order_sn`),
+  UNIQUE KEY `uk_reservation_no` (`reservation_no`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COMMENT='订单表';
 
 DROP TABLE IF EXISTS `parent_order`;
@@ -49,7 +52,8 @@ CREATE TABLE `parent_order` (
   `delete_status` int(1) DEFAULT '0' COMMENT '删除状态：0->未删除；1->已删除',
   `create_time` datetime DEFAULT NULL COMMENT '创建时间',
   `update_time` datetime DEFAULT NULL COMMENT '更新时间',
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_parent_order_sn` (`parent_order_sn`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COMMENT='父订单表';
 
 DROP TABLE IF EXISTS `order_item`;
@@ -75,5 +79,50 @@ CREATE TABLE `order_item` (
   `gift_integration` int(11) DEFAULT '0' COMMENT '商品赠送积分',
   `gift_growth` int(11) DEFAULT '0' COMMENT '商品赠送成长值',
   `product_attr` varchar(500) DEFAULT NULL COMMENT '商品销售属性:[{"key":"颜色","value":"颜色"},{"key":"容量","value":"4G"}]',
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `idx_order_id` (`order_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COMMENT='订单中所包含的商品';
+
+DROP TABLE IF EXISTS `product_stock_aggregate`;
+CREATE TABLE `product_stock_aggregate` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `product_id` bigint(20) NOT NULL,
+  `available_stock` int(11) NOT NULL DEFAULT '0',
+  `frozen_stock` int(11) NOT NULL DEFAULT '0',
+  `confirmed_stock` int(11) NOT NULL DEFAULT '0',
+  `version` int(11) NOT NULL DEFAULT '0',
+  `create_time` datetime DEFAULT NULL,
+  `update_time` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_product_id` (`product_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COMMENT='库存聚合表';
+
+DROP TABLE IF EXISTS `stock_reservation`;
+CREATE TABLE `stock_reservation` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `reservation_no` varchar(64) NOT NULL,
+  `order_sn` varchar(64) NOT NULL,
+  `user_id` bigint(20) DEFAULT NULL,
+  `status` int(1) NOT NULL COMMENT '0-冻结中 1-已确认 2-已释放 3-已过期',
+  `expire_time` datetime DEFAULT NULL,
+  `create_time` datetime DEFAULT NULL,
+  `update_time` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_reservation_no` (`reservation_no`),
+  UNIQUE KEY `uk_order_sn` (`order_sn`),
+  KEY `idx_user_id_status` (`user_id`,`status`)
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COMMENT='库存预占单';
+
+DROP TABLE IF EXISTS `stock_reservation_item`;
+CREATE TABLE `stock_reservation_item` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `reservation_no` varchar(64) NOT NULL,
+  `order_sn` varchar(64) NOT NULL,
+  `product_id` bigint(20) NOT NULL,
+  `quantity` int(11) NOT NULL,
+  `create_time` datetime DEFAULT NULL,
+  `update_time` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_reservation_product` (`reservation_no`,`product_id`),
+  KEY `idx_order_sn` (`order_sn`)
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COMMENT='库存预占明细';

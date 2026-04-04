@@ -6,7 +6,6 @@ import com.aiolos.plaza.enums.RedisKeyEnum;
 import com.aiolos.plaza.mapper.ProductStockLogMapper;
 import com.aiolos.plaza.model.po.Product;
 import com.aiolos.plaza.model.po.ProductStockLog;
-import com.aiolos.plaza.model.po.SeckillActivity;
 import com.aiolos.plaza.service.ProductService;
 import com.aiolos.plaza.service.SeckillActivityService;
 import com.aiolos.plaza.shop.model.vo.ProductVO;
@@ -19,7 +18,6 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 

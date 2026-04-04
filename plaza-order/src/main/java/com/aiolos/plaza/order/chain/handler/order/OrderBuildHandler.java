@@ -15,23 +15,23 @@ import com.aiolos.plaza.model.po.Order;
 import com.aiolos.plaza.model.po.OrderItem;
 import com.aiolos.plaza.model.po.ParentOrder;
 import com.aiolos.plaza.model.po.Product;
-import com.aiolos.plaza.mq.message.StockDeductMessage;
 import com.aiolos.plaza.order.chain.Chain;
 import com.aiolos.plaza.order.chain.ChainHandler;
 import com.aiolos.plaza.order.chain.context.OrderCreateContext;
+import com.aiolos.plaza.order.coreflow.inventory.model.InventoryReserveItem;
+import com.aiolos.plaza.order.coreflow.inventory.service.OrderInventoryService;
+import com.aiolos.plaza.orderno.provider.api.OrderNoApi;
 import com.alibaba.fastjson.JSON;
-import jakarta.annotation.PostConstruct;
+import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.Collections;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -55,18 +55,15 @@ public class OrderBuildHandler implements ChainHandler<OrderCreateContext> {
     @Autowired
     private ParentOrderMapper parentOrderMapper;
 
-    private DefaultRedisScript<Long> stockDeductScript;
+    @Autowired
+    private OrderInventoryService orderInventoryService;
 
-    @PostConstruct
-    public void init() {
-        stockDeductScript = new DefaultRedisScript<>();
-        stockDeductScript.setResultType(Long.class);
-        stockDeductScript.setLocation(new ClassPathResource("lua/stock_deduct.lua"));
-    }
+    @DubboReference
+    private OrderNoApi orderNoApi;
 
     @Override
     public void handle(OrderCreateContext context, Chain<OrderCreateContext> chain) {
-        String parentOrderSn = generateOrderSn("P");
+        String parentOrderSn = orderNoApi.nextParentOrderSn();
         context.setParentOrderSn(parentOrderSn);
         
         Address address = context.getAddress();
@@ -76,40 +73,22 @@ public class OrderBuildHandler implements ChainHandler<OrderCreateContext> {
             Long shopId = entry.getKey();
             List<CartItem> shopItems = entry.getValue();
 
-            String orderSn = generateOrderSn("D");
+            String orderSn = orderNoApi.nextChildOrderSn();
             BigDecimal totalAmount = BigDecimal.ZERO;
+            Map<Long, Integer> reserveProductQtyMap = new LinkedHashMap<>();
 
             for (CartItem item : shopItems) {
                 Long productId = item.getProductId();
                 context.getAllCartIds().add(item.getId());
 
-                String productJson = shopRedisTemplate.opsForValue().get(RedisKeyEnum.PRODUCT_INFO.getKey(productId));
-                if (productJson == null) {
-                    Product dbProduct = productMapper.selectById(productId);
-                    if (dbProduct == null || dbProduct.getStatus() != 1) {
-                        ExceptionUtil.throwException(OrderExceptionEnum.PRODUCT_NOT_EXIST);
-                    }
-                    shopRedisTemplate.opsForValue().set(RedisKeyEnum.PRODUCT_INFO.getKey(productId), JSON.toJSONString(dbProduct), 1, TimeUnit.DAYS);
-                    shopRedisTemplate.opsForValue().setIfAbsent(RedisKeyEnum.PRODUCT_STOCK.getKey(productId), String.valueOf(dbProduct.getStock()));
-                    productJson = JSON.toJSONString(dbProduct);
-                }
-
-                Product product = JSON.parseObject(productJson, Product.class);
-                if (product.getStatus() != 1) {
+                Product product = productMapper.selectById(productId);
+                if (product == null || product.getStatus() != 1) {
                     ExceptionUtil.throwException(OrderExceptionEnum.PRODUCT_NOT_EXIST);
                 }
+                shopRedisTemplate.opsForValue().set(RedisKeyEnum.PRODUCT_INFO.getKey(productId), JSON.toJSONString(product), 1, TimeUnit.DAYS);
+                shopRedisTemplate.opsForValue().setIfAbsent(RedisKeyEnum.PRODUCT_STOCK.getKey(productId), String.valueOf(product.getStock()));
 
-                Long result = shopRedisTemplate.execute(stockDeductScript,
-                        Collections.singletonList(RedisKeyEnum.PRODUCT_STOCK.getKey(productId)),
-                        String.valueOf(item.getQuantity()));
-
-                if (result == -2) {
-                    ExceptionUtil.throwException(OrderExceptionEnum.PRODUCT_NOT_EXIST);
-                } else if (result == -1) {
-                    ExceptionUtil.throwException(OrderExceptionEnum.STOCK_NOT_ENOUGH);
-                }
-
-                context.getStockDeductMessages().add(new StockDeductMessage(productId, item.getQuantity(), orderSn));
+                reserveProductQtyMap.merge(productId, item.getQuantity(), Integer::sum);
 
                 BigDecimal price = product.getPrice() != null ? product.getPrice() : BigDecimal.ZERO;
                 item.setPriceSnapshot(price);
@@ -130,6 +109,8 @@ public class OrderBuildHandler implements ChainHandler<OrderCreateContext> {
             order.setPayType(req.getPayType());
             order.setStatus(OrderState.CREATED.getCode());
             order.setAddressId(req.getAddressId());
+            String reservationNo = "RSV-" + orderSn;
+            order.setReservationNo(reservationNo);
 
             order.setReceiverName(address.getName());
             order.setReceiverPhone(address.getTel());
@@ -166,6 +147,12 @@ public class OrderBuildHandler implements ChainHandler<OrderCreateContext> {
                 orderItemMapper.insert(orderItem);
             }
 
+            List<InventoryReserveItem> reserveItems = new ArrayList<>();
+            for (Map.Entry<Long, Integer> reserveEntry : reserveProductQtyMap.entrySet()) {
+                reserveItems.add(new InventoryReserveItem(reserveEntry.getKey(), reserveEntry.getValue()));
+            }
+            orderInventoryService.reserve(orderSn, context.getUserId(), reserveItems, LocalDateTime.now().plusMinutes(10));
+
             context.setParentTotalAmount(context.getParentTotalAmount().add(totalAmount));
         }
 
@@ -182,13 +169,6 @@ public class OrderBuildHandler implements ChainHandler<OrderCreateContext> {
         parentOrder.setUpdateTime(LocalDateTime.now());
         parentOrderMapper.insert(parentOrder);
         
-        // 构建完成，继续执行后续的后置处理节点
         chain.proceed(context);
-    }
-
-    private String generateOrderSn(String prefix) {
-        String dateStr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS"));
-        int random = (int) (Math.random() * 9000 + 1000);
-        return prefix + dateStr + random;
     }
 }

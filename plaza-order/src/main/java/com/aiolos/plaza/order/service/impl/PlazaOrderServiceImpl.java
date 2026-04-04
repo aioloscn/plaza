@@ -2,21 +2,17 @@ package com.aiolos.plaza.order.service.impl;
 
 import com.aiolos.common.exception.util.ExceptionUtil;
 import com.aiolos.plaza.enums.OrderState;
+import com.aiolos.plaza.enums.RedisKeyEnum;
 import com.aiolos.plaza.enums.exceptions.OrderExceptionEnum;
+import com.aiolos.plaza.mapper.AddressMapper;
+import com.aiolos.plaza.mapper.CartItemMapper;
 import com.aiolos.plaza.mapper.OrderItemMapper;
 import com.aiolos.plaza.mapper.OrderMapper;
 import com.aiolos.plaza.mapper.ParentOrderMapper;
-import com.aiolos.plaza.mq.constant.OrderMqConstants;
-import com.aiolos.plaza.order.config.AlipayConfig;
-import com.aiolos.plaza.model.po.MqLocalMessage;
-import com.aiolos.plaza.service.MqLocalMessageService;
-import com.alipay.api.AlipayClient;
-import com.alipay.api.DefaultAlipayClient;
-import com.alipay.api.domain.AlipayTradePagePayModel;
-import com.alipay.api.domain.AlipayTradeWapPayModel;
-import com.alipay.api.internal.util.AlipaySignature;
-import com.alipay.api.request.AlipayTradePagePayRequest;
-import com.alipay.api.request.AlipayTradeWapPayRequest;
+import com.aiolos.plaza.mapper.ProductMapper;
+import com.aiolos.plaza.model.po.Address;
+import com.aiolos.plaza.model.po.CartItem;
+import com.aiolos.plaza.model.po.Product;
 import com.aiolos.plaza.model.po.Order;
 import com.aiolos.plaza.model.po.OrderItem;
 import com.aiolos.plaza.model.po.ParentOrder;
@@ -30,32 +26,39 @@ import com.aiolos.plaza.order.chain.handler.order.CartFetchHandler;
 import com.aiolos.plaza.order.chain.handler.order.DelayMessageSendHandler;
 import com.aiolos.plaza.order.chain.handler.order.LocalMessageSaveHandler;
 import com.aiolos.plaza.order.chain.handler.order.OrderBuildHandler;
+import com.aiolos.plaza.order.coreflow.inventory.service.OrderInventoryService;
 import com.aiolos.plaza.order.model.bo.OrderSubmitReq;
 import com.aiolos.plaza.order.service.PlazaOrderService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.messaging.Message;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.interceptor.TransactionAspectSupport;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 
 import com.aiolos.plaza.mapper.ShopMapper;
 import com.aiolos.plaza.model.po.Shop;
+import com.aiolos.plaza.order.model.vo.OrderConfirmVO;
 import com.aiolos.plaza.order.model.vo.OrderItemVO;
 import com.aiolos.plaza.order.model.vo.OrderListVO;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.statemachine.StateMachine;
 import org.springframework.statemachine.config.StateMachineFactory;
+import org.springframework.statemachine.support.DefaultStateMachineContext;
 import com.aiolos.plaza.enums.OrderEvent;
+import org.springframework.util.StringUtils;
 
-import com.alibaba.fastjson.JSON;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 
 @Slf4j
 @Service
@@ -74,13 +77,19 @@ public class PlazaOrderServiceImpl implements PlazaOrderService {
     private ShopMapper shopMapper;
 
     @Autowired
+    private ProductMapper productMapper;
+
+    @Autowired
+    private CartItemMapper cartItemMapper;
+
+    @Autowired
+    private AddressMapper addressMapper;
+
+    @Autowired
+    private OrderInventoryService orderInventoryService;
+
+    @Autowired
     private StateMachineFactory<OrderState, OrderEvent> orderStateMachineFactory;
-
-    @Autowired
-    private MqLocalMessageService mqLocalMessageService;
-
-    @Autowired
-    private AlipayConfig alipayConfig;
 
     @Autowired
     private OrderStateChangeInterceptor orderStateChangeInterceptor;
@@ -106,9 +115,42 @@ public class PlazaOrderServiceImpl implements PlazaOrderService {
     @Autowired
     private DelayMessageSendHandler delayMessageSendHandler;
 
+    @Autowired
+    @Qualifier("orderRedisTemplate")
+    private StringRedisTemplate orderRedisTemplate;
+
+    /**
+     * 下单前确认（确认阶段）
+     * 调用时机：结算页点击“提交订单”前，用于给前端返回差异并签发 confirmToken。
+     */
+    @Override
+    public OrderConfirmVO confirm(Long userId, OrderSubmitReq req) {
+        PrecheckSnapshot snapshot = buildPrecheckSnapshot(userId, req);
+        OrderConfirmVO vo = new OrderConfirmVO();
+        vo.setTotalAmount(snapshot.totalAmount);
+        vo.setItemCount(snapshot.items.size());
+        vo.setItems(snapshot.items);
+        vo.setReady(snapshot.ready);
+        if (snapshot.ready) {
+            String token = UUID.randomUUID().toString().replace("-", "");
+            String key = RedisKeyEnum.ORDER_CONFIRM_TOKEN.getKey(userId, token);
+            // token 只保存快照指纹，不保存明细，提交时重算指纹对比
+            orderRedisTemplate.opsForValue().set(key, snapshot.fingerprint, RedisKeyEnum.ORDER_CONFIRM_TOKEN.getDefaultExpireSeconds(), java.util.concurrent.TimeUnit.SECONDS);
+            vo.setConfirmToken(token);
+        }
+        return vo;
+    }
+    
+    /**
+     * 下单入口（提交阶段）
+     * 调用时机：前端调用 /order/confirm 且拿到 confirmToken 后，再调用本方法。
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public String submit(Long userId, OrderSubmitReq req) {
+        // 先校验确认令牌，确保提交时商品/价格/库存与确认阶段一致
+        validateConfirmToken(userId, req);
+
         OrderCreateContext context = new OrderCreateContext();
         context.setUserId(userId);
         context.setReq(req);
@@ -198,7 +240,10 @@ public class PlazaOrderServiceImpl implements PlazaOrderService {
         }
         
         // 计算剩余支付时间（10分钟 = 600000 毫秒）
-        if (OrderState.CREATED.getCode().equals(order.getStatus()) && order.getCreateTime() != null) {
+        if ((OrderState.CREATED.getCode().equals(order.getStatus())
+                || OrderState.PAYING.getCode().equals(order.getStatus())
+                || OrderState.CLOSING.getCode().equals(order.getStatus()))
+                && order.getCreateTime() != null) {
             LocalDateTime expireTime = order.getCreateTime().plusMinutes(10);
             // 修复计算时间差逻辑，计算从现在到过期时间的毫秒数
             long remainMillis = java.time.Duration.between(LocalDateTime.now(), expireTime).toMillis();
@@ -223,7 +268,12 @@ public class PlazaOrderServiceImpl implements PlazaOrderService {
         LambdaQueryWrapper<ParentOrder> parentQuery = new LambdaQueryWrapper<>();
         parentQuery.eq(ParentOrder::getUserId, userId);
         if (status != null) {
-            parentQuery.eq(ParentOrder::getStatus, status);
+            // 前端“待付款”标签传 0：这里兼容把“支付中”也纳入同一标签查询结果。
+            if (OrderState.CREATED.getCode().equals(status)) {
+                parentQuery.in(ParentOrder::getStatus, Arrays.asList(OrderState.CREATED.getCode(), OrderState.PAYING.getCode()));
+            } else {
+                parentQuery.eq(ParentOrder::getStatus, status);
+            }
         }
         parentQuery.orderByDesc(ParentOrder::getCreateTime);
         List<ParentOrder> parentOrders = parentOrderMapper.selectList(parentQuery);
@@ -323,7 +373,10 @@ public class PlazaOrderServiceImpl implements PlazaOrderService {
             vo.setItems(allItemVOs);
 
             // 计算剩余支付时间（10分钟）
-            if (OrderState.CREATED.getCode().equals(parentOrder.getStatus()) && parentOrder.getCreateTime() != null) {
+            if ((OrderState.CREATED.getCode().equals(parentOrder.getStatus())
+                    || OrderState.PAYING.getCode().equals(parentOrder.getStatus())
+                    || OrderState.CLOSING.getCode().equals(parentOrder.getStatus()))
+                    && parentOrder.getCreateTime() != null) {
                 LocalDateTime expireTime = parentOrder.getCreateTime().plusMinutes(10);
                 long remainMillis = java.time.Duration.between(LocalDateTime.now(), expireTime).toMillis();
                 vo.setRemainTime(Math.max(remainMillis, 0L));
@@ -340,43 +393,69 @@ public class PlazaOrderServiceImpl implements PlazaOrderService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void cancelTimeoutOrders() {
-        // 查找创建时间在10分钟前，且状态为待付款(0)的订单
         LocalDateTime timeoutTime = LocalDateTime.now().minusMinutes(10);
-        LambdaQueryWrapper<Order> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(Order::getStatus, OrderState.CREATED.getCode());
-        queryWrapper.le(Order::getCreateTime, timeoutTime);
-        
-        List<Order> timeoutOrders = orderMapper.selectList(queryWrapper);
-        if (timeoutOrders == null || timeoutOrders.isEmpty()) {
-            return;
+        Set<String> affectedParentOrderSns = new HashSet<>();
+
+        List<Order> needSoftClosing = orderMapper.selectList(new LambdaQueryWrapper<Order>()
+                .in(Order::getStatus, Arrays.asList(OrderState.CREATED.getCode(), OrderState.PAYING.getCode()))
+                .le(Order::getCreateTime, timeoutTime));
+        if (needSoftClosing != null && !needSoftClosing.isEmpty()) {
+            LocalDateTime now = LocalDateTime.now();
+            for (Order order : needSoftClosing) {
+                // 严格由状态机驱动 CREATED/PAYING -> CLOSING，禁止手工改状态字段。
+                boolean accepted = sendOrderEventWithDbState(order, OrderEvent.START_CLOSE, null, OrderExceptionEnum.ORDER_STATUS_ERROR);
+                if (accepted) {
+                    if (StringUtils.hasText(order.getReservationNo())) {
+                        orderInventoryService.extendExpireTime(order.getReservationNo(), now.plusMinutes(2));
+                    }
+                    if (StringUtils.hasText(order.getParentOrderSn())) {
+                        affectedParentOrderSns.add(order.getParentOrderSn());
+                    }
+                }
+            }
         }
 
-        for (Order order : timeoutOrders) {
-            // 更新订单状态为已关闭
-            // 使用状态机触发取消事件，而不再直接修改状态
-            StateMachine<OrderState, OrderEvent> stateMachine = orderStateMachineFactory.getStateMachine(order.getId().toString());
-            // 手动注册持久化拦截器，否则状态流转后不会更新DB
-            stateMachine.getStateMachineAccessor().doWithAllRegions(access -> access.addStateMachineInterceptor(orderStateChangeInterceptor));
-            stateMachine.start(); // 必须启动状态机
-            
-            Message<OrderEvent> message = MessageBuilder.withPayload(OrderEvent.CANCEL)
-                    .setHeader("orderId", order.getId())
-                    .build();
-            boolean accepted = stateMachine.sendEvent(message);
-            
-            // 状态机是否可以处理该事件，状态不匹配返回 false，Action抛出异常依然会返回 true
-            if (!accepted) {
-                log.warn("状态机拒绝取消事件，订单号: {}", order.getOrderSn());
-                continue;
+        List<Order> needCloseConfirm = orderMapper.selectList(new LambdaQueryWrapper<Order>()
+                .eq(Order::getStatus, OrderState.CLOSING.getCode())
+                .le(Order::getUpdateTime, LocalDateTime.now().minusMinutes(2)));
+        if (needCloseConfirm != null && !needCloseConfirm.isEmpty()) {
+            for (Order order : needCloseConfirm) {
+                Order latest = orderMapper.selectById(order.getId());
+                if (latest == null || !OrderState.CLOSING.getCode().equals(latest.getStatus())) {
+                    continue;
+                }
+                boolean accepted = sendOrderEventWithDbState(latest, OrderEvent.CANCEL, null, OrderExceptionEnum.ORDER_STOCK_RELEASE_FAIL);
+                if (!accepted) {
+                    log.warn("状态机拒绝取消事件，订单号: {}", latest.getOrderSn());
+                    continue;
+                }
+                if (StringUtils.hasText(latest.getParentOrderSn())) {
+                    affectedParentOrderSns.add(latest.getParentOrderSn());
+                }
+                log.info("关闭确认完成，订单已关闭，订单号: {}", latest.getOrderSn());
             }
+        }
 
-            // 发送事件后，检查状态机内部是否发生了被吞掉的异常
-            if (stateMachine.hasStateMachineError()) {
-                log.error("状态机执行Action发生异常，触发事务回滚，订单号: {}", order.getOrderSn());
-                ExceptionUtil.throwException(OrderExceptionEnum.ORDER_STOCK_RELEASE_FAIL);
-            }
+        affectedParentOrderSns.forEach(this::recomputeParentOrderStatus);
+    }
 
-            log.info("超时未支付订单取消成功，订单号: {}", order.getOrderSn());
+    /**
+     * 父单状态兜底对账任务入口：
+     * 用于修复极端并发或异常中断导致的父子状态短暂不一致。
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void reconcileParentOrderStatus(int batchSize) {
+        int finalBatchSize = batchSize > 0 ? batchSize : 200;
+        List<ParentOrder> parentOrders = parentOrderMapper.selectList(new LambdaQueryWrapper<ParentOrder>()
+                .eq(ParentOrder::getDeleteStatus, 0)
+                .orderByAsc(ParentOrder::getId)
+                .last("limit " + finalBatchSize));
+        if (parentOrders == null || parentOrders.isEmpty()) {
+            return;
+        }
+        for (ParentOrder parentOrder : parentOrders) {
+            recomputeParentOrderStatus(parentOrder.getParentOrderSn());
         }
     }
 
@@ -384,217 +463,313 @@ public class PlazaOrderServiceImpl implements PlazaOrderService {
     @Transactional(rollbackFor = Exception.class)
     public void cancelOrder(Long orderId) {
         Order order = orderMapper.selectById(orderId);
-        if (order == null || !OrderState.CREATED.getCode().equals(order.getStatus())) {
-            // 订单不存在或不是待支付状态，无需取消
+        if (order == null) {
             return;
         }
-
-        // 使用状态机触发取消事件
-        StateMachine<OrderState, OrderEvent> stateMachine = orderStateMachineFactory.getStateMachine(order.getId().toString());
-        // 手动注册持久化拦截器，否则状态流转后不会更新DB
-        stateMachine.getStateMachineAccessor().doWithAllRegions(access -> access.addStateMachineInterceptor(orderStateChangeInterceptor));
-        stateMachine.start(); // 必须启动状态机
-        
-        Message<OrderEvent> message = MessageBuilder.withPayload(OrderEvent.CANCEL)
-                .setHeader("orderId", order.getId())
-                .build();
-        boolean accepted = stateMachine.sendEvent(message);
-        
+        if (isPaidOrAfter(order.getStatus()) || OrderState.CLOSED.getCode().equals(order.getStatus())) {
+            return;
+        }
+        if (OrderState.PAY_RECOVERING.getCode().equals(order.getStatus())
+                || OrderState.REFUNDING.getCode().equals(order.getStatus())
+                || OrderState.REFUNDED.getCode().equals(order.getStatus())
+                || OrderState.REFUND_FAILED.getCode().equals(order.getStatus())) {
+            return;
+        }
+        if (!OrderState.CREATED.getCode().equals(order.getStatus()) && !OrderState.PAYING.getCode().equals(order.getStatus())) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        // 严格由状态机驱动 CREATED/PAYING -> CLOSING，禁止手工改状态字段。
+        boolean accepted = sendOrderEventWithDbState(order, OrderEvent.START_CLOSE, null, OrderExceptionEnum.ORDER_STATUS_ERROR);
         if (!accepted) {
-            log.warn("状态机拒绝取消事件，订单号: {}", order.getOrderSn());
             return;
         }
-
-        // 发送事件后，检查状态机内部是否发生了被吞掉的异常
-        if (stateMachine.hasStateMachineError()) {
-            log.error("状态机执行Action发生异常，触发事务回滚，订单号: {}", order.getOrderSn());
-            ExceptionUtil.throwException(OrderExceptionEnum.ORDER_STOCK_RELEASE_FAIL);
+        if (StringUtils.hasText(order.getReservationNo())) {
+            orderInventoryService.extendExpireTime(order.getReservationNo(), now.plusMinutes(2));
         }
-
-        log.info("延迟消息触发未支付订单取消成功，订单号: {}", order.getOrderSn());
+        recomputeParentOrderStatus(order.getParentOrderSn());
+        log.info("订单进入关闭确认中，订单号: {}", order.getOrderSn());
     }
 
-    @Override
-    public String pay(Long userId, String orderSn, Integer payType, boolean isMobile) {
-        // 1. 查询订单
-        // 根据业务逻辑，如果是合并支付，应该是 parentOrderSn
-        ParentOrder parentOrder = parentOrderMapper.selectOne(new LambdaQueryWrapper<ParentOrder>()
-                .eq(ParentOrder::getParentOrderSn, orderSn)
-                .eq(ParentOrder::getUserId, userId));
-
-        if (parentOrder == null) {
-            ExceptionUtil.throwException(OrderExceptionEnum.ORDER_NOT_EXIST);
-        }
-
-        // 2. 校验状态
-        if (!OrderState.CREATED.getCode().equals(parentOrder.getStatus())) {
-            ExceptionUtil.throwException(OrderExceptionEnum.ORDER_STATUS_ERROR);
-        }
-
-        // 3. 调用支付宝 SDK 生成支付表单
-        try {
-            AlipayClient alipayClient = new DefaultAlipayClient(
-                    alipayConfig.getGatewayUrl(),
-                    alipayConfig.getAppId(),
-                    alipayConfig.getMerchantPrivateKey(),
-                    alipayConfig.getFormat(),
-                    alipayConfig.getCharset(),
-                    alipayConfig.getAlipayPublicKey(),
-                    alipayConfig.getSignType());
-
-            if (isMobile) {
-                AlipayTradeWapPayRequest request = new AlipayTradeWapPayRequest();
-                AlipayTradeWapPayModel model = new AlipayTradeWapPayModel();
-                model.setOutTradeNo(orderSn);
-                model.setSubject("Plaza商城订单-" + orderSn);
-                model.setTotalAmount(parentOrder.getPayAmount().toString());
-                model.setBody("Plaza商城订单支付");
-                model.setProductCode("QUICK_WAP_WAY");
-                request.setBizModel(model);
-                request.setNotifyUrl(alipayConfig.getNotifyUrl());
-                request.setReturnUrl(alipayConfig.getReturnUrl());
-                return alipayClient.pageExecute(request).getBody();
-            } else {
-                AlipayTradePagePayRequest request = new AlipayTradePagePayRequest();
-                AlipayTradePagePayModel model = new AlipayTradePagePayModel();
-                model.setOutTradeNo(orderSn);
-                model.setSubject("Plaza商城订单-" + orderSn);
-                model.setTotalAmount(parentOrder.getPayAmount().toString());
-                model.setBody("Plaza商城订单支付");
-                model.setProductCode("FAST_INSTANT_TRADE_PAY");
-                request.setBizModel(model);
-                request.setNotifyUrl(alipayConfig.getNotifyUrl());
-                request.setReturnUrl(alipayConfig.getReturnUrl());
-                return alipayClient.pageExecute(request).getBody();
-            }
-        } catch (Exception e) {
-            log.error("生成支付表单失败", e);
-            ExceptionUtil.throwException(OrderExceptionEnum.CREATE_PAY_FORM_FAIL);
-        }
-        return null;
-    }
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public String payNotify(Map<String, String> params) {
-        log.info("收到支付宝回调通知: {}", params);
-        try {
-            // 1. 验签 (跳过 AppID 校验，因为沙箱环境可能不一致，或者需要配置)
-            // 在生产环境必须开启
-            boolean signVerified = true; 
-            try {
-                signVerified = AlipaySignature.rsaCheckV1(
-                    params,
-                    alipayConfig.getAlipayPublicKey(),
-                    alipayConfig.getCharset(),
-                    alipayConfig.getSignType());
-            } catch (Exception e) {
-                log.error("支付宝验签异常", e);
-                return "fail";
-            }
-
-            if (!signVerified) {
-                log.error("支付宝回调验签失败");
-                return "fail";
-            }
-
-            // 2. 校验参数
-            String outTradeNo = params.get("out_trade_no");
-            String tradeStatus = params.get("trade_status");
-            String totalAmount = params.get("total_amount");
-            String appId = params.get("app_id");
-
-            if (!alipayConfig.getAppId().equals(appId)) {
-                log.error("支付宝回调AppID不匹配");
-                return "fail";
-            }
-
-            if (!"TRADE_SUCCESS".equals(tradeStatus) && !"TRADE_FINISHED".equals(tradeStatus)) {
-                return "success"; // 状态不对也返回 success 防止支付宝重试，因为我们只处理成功
-            }
-
-            // 3. 查询订单
-            ParentOrder parentOrder = parentOrderMapper.selectOne(new LambdaQueryWrapper<ParentOrder>()
-                    .eq(ParentOrder::getParentOrderSn, outTradeNo));
-
-            if (parentOrder == null) {
-                log.error("支付宝回调订单不存在: {}", outTradeNo);
-                return "fail";
-            }
-
-            // 4. 校验金额 (注意 BigDecimal 比较)
-            if (parentOrder.getPayAmount().compareTo(new BigDecimal(totalAmount)) != 0) {
-                log.error("支付宝回调金额不匹配: 订单金额={}, 回调金额={}", parentOrder.getPayAmount(), totalAmount);
-                return "fail";
-            }
-
-            // 5. 幂等处理：如果订单已经是支付状态，直接返回 success
-            if (OrderState.PAID.getCode().equals(parentOrder.getStatus()) || 
-                OrderState.DELIVERED.getCode().equals(parentOrder.getStatus()) ||
-                OrderState.COMPLETED.getCode().equals(parentOrder.getStatus())) {
-                log.info("订单已支付，忽略回调: {}", outTradeNo);
-                return "success";
-            }
-
-            // 6. 更新父订单状态
-            parentOrder.setStatus(OrderState.PAID.getCode());
-            parentOrder.setPaymentTime(LocalDateTime.now()); // 更新支付时间
-            parentOrder.setTradeNo(params.get("trade_no")); // 记录第三方流水号
-            parentOrder.setBuyerId(params.get("buyer_id")); // 记录买家账号
-            parentOrder.setUpdateTime(LocalDateTime.now());
-            parentOrderMapper.updateById(parentOrder);
-
-            // 7. 更新子订单状态（使用状态机处理，确保业务流程完整性）
-            List<Order> childOrders = orderMapper.selectList(new LambdaQueryWrapper<Order>()
-                    .eq(Order::getParentOrderSn, outTradeNo));
-            
-            for (Order child : childOrders) {
-                // 仅处理待支付状态的订单
-                if (OrderState.CREATED.getCode().equals(child.getStatus())) {
-                    // 获取对应订单的状态机
-                    StateMachine<OrderState, OrderEvent> stateMachine = orderStateMachineFactory.getStateMachine(child.getId().toString());
-                    // 配置状态机拦截器，用于持久化状态变更
-                    stateMachine.getStateMachineAccessor().doWithAllRegions(access -> access.addStateMachineInterceptor(orderStateChangeInterceptor));
-                    stateMachine.start();
-                    
-                    // 构建支付事件消息
-                    Message<OrderEvent> message = MessageBuilder.withPayload(OrderEvent.PAY)
-                            .setHeader("orderId", child.getId())
-                            .setHeader("paymentTime", parentOrder.getPaymentTime()) // 传递支付时间
-                            .build();
-                    
-                    // 发送事件，状态机自动处理状态流转和后续动作
-                    boolean accepted = stateMachine.sendEvent(message);
-                    if (!accepted) {
-                        log.warn("订单状态机拒绝支付事件，订单ID: {}, 当前状态: {}", child.getId(), child.getStatus());
-                    }
-                }
-            }
-
-            // 8. 写入本地消息表 (Outbox)，通知下游
-            MqLocalMessage localMsg = new MqLocalMessage();
-            localMsg.setTopic(OrderMqConstants.BINDING_ORDER_PAID_OUT);
-            localMsg.setContent(JSON.toJSONString(parentOrder));
-            localMsg.setState(0);
-            localMsg.setBusinessKey(outTradeNo);
-            localMsg.setCreateTime(LocalDateTime.now());
-            localMsg.setUpdateTime(LocalDateTime.now());
-            mqLocalMessageService.save(localMsg);
-
-            return "success";
-        } catch (Exception e) {
-            log.error("支付宝回调处理异常", e);
-            return "fail";
-        }
+    private boolean isPaidOrAfter(Integer status) {
+        return OrderState.PAID.getCode().equals(status)
+                || OrderState.DELIVERED.getCode().equals(status)
+                || OrderState.COMPLETED.getCode().equals(status)
+                || OrderState.REFUNDED.getCode().equals(status);
     }
 
     /**
-     * 生成订单号：时间戳 + 随机数
-     * @param prefix 订单号前缀（如：P-父订单，D-子订单）
+     * 状态机统一发送入口：
+     * 1) 先把状态机恢复到数据库当前状态
+     * 2) 再发送业务事件，确保流转校验基于真实状态而非初始状态
      */
-    private String generateOrderSn(String prefix) {
-        String dateStr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS"));
-        int random = (int) (Math.random() * 9000 + 1000);
-        return prefix + dateStr + random;
+    private boolean sendOrderEventWithDbState(Order order, OrderEvent event, LocalDateTime paymentTime, OrderExceptionEnum errorEnum) {
+        // 始终以数据库最新状态作为状态机的 source，避免调用方传入对象过期导致并发误判。
+        Order latest = orderMapper.selectById(order.getId());
+        if (latest == null) {
+            ExceptionUtil.throwException(OrderExceptionEnum.ORDER_NOT_EXIST);
+        }
+        StateMachine<OrderState, OrderEvent> stateMachine = orderStateMachineFactory.getStateMachine(latest.getId().toString());
+        stateMachine.getStateMachineAccessor().doWithAllRegions(access -> access.addStateMachineInterceptor(orderStateChangeInterceptor));
+        stateMachine.stop();
+        stateMachine.getStateMachineAccessor().doWithAllRegions(access ->
+                access.resetStateMachine(new DefaultStateMachineContext<>(toOrderState(latest.getStatus()), null, null, null)));
+        stateMachine.start();
+
+        MessageBuilder<OrderEvent> builder = MessageBuilder.withPayload(event).setHeader("orderId", latest.getId());
+        if (paymentTime != null) {
+            builder.setHeader("paymentTime", paymentTime);
+        }
+        boolean accepted = stateMachine.sendEvent(builder.build());
+        if (stateMachine.hasStateMachineError()) {
+            log.error("状态机执行异常，订单ID: {}, event={}", latest.getId(), event);
+            ExceptionUtil.throwException(errorEnum);
+        }
+        return accepted;
+    }
+
+    private OrderState toOrderState(Integer statusCode) {
+        for (OrderState value : OrderState.values()) {
+            if (value.getCode().equals(statusCode)) {
+                return value;
+            }
+        }
+        log.error("未知订单状态编码，statusCode={}", statusCode);
+        ExceptionUtil.throwException(OrderExceptionEnum.ORDER_STATUS_ERROR);
+        return OrderState.INVALID;
+    }
+
+    /**
+     * 父单状态不再由任一子单直接覆盖，而是由全部子单状态聚合计算得出。
+     */
+    private void recomputeParentOrderStatus(String parentOrderSn) {
+        if (!StringUtils.hasText(parentOrderSn)) {
+            return;
+        }
+        ParentOrder parentOrder = parentOrderMapper.selectOne(new LambdaQueryWrapper<ParentOrder>()
+                .eq(ParentOrder::getParentOrderSn, parentOrderSn));
+        if (parentOrder == null) {
+            return;
+        }
+        List<Order> childOrders = orderMapper.selectList(new LambdaQueryWrapper<Order>()
+                .eq(Order::getParentOrderSn, parentOrderSn));
+        if (childOrders == null || childOrders.isEmpty()) {
+            return;
+        }
+        Integer targetStatus = calculateParentStatus(childOrders.stream().map(Order::getStatus).collect(Collectors.toList()));
+        if (targetStatus == null || Objects.equals(parentOrder.getStatus(), targetStatus)) {
+            return;
+        }
+        parentOrderMapper.update(null, new LambdaUpdateWrapper<ParentOrder>()
+                .set(ParentOrder::getStatus, targetStatus)
+                .set(ParentOrder::getUpdateTime, LocalDateTime.now())
+                .eq(ParentOrder::getId, parentOrder.getId())
+                .eq(ParentOrder::getStatus, parentOrder.getStatus()));
+    }
+
+    /**
+     * 父单聚合规则：
+     * 全部关闭->关闭；全部完成->完成；全部已发货或已完成且至少有已发货->已发货；
+     * 不存在待付款且至少有已支付/已发货/已完成->已支付；其余保持待付款。
+     */
+    private Integer calculateParentStatus(List<Integer> childStatuses) {
+        if (childStatuses == null || childStatuses.isEmpty()) {
+            return null;
+        }
+        boolean allClosed = childStatuses.stream().allMatch(s -> OrderState.CLOSED.getCode().equals(s));
+        if (allClosed) {
+            return OrderState.CLOSED.getCode();
+        }
+        boolean allCompleted = childStatuses.stream().allMatch(s -> OrderState.COMPLETED.getCode().equals(s));
+        if (allCompleted) {
+            return OrderState.COMPLETED.getCode();
+        }
+        boolean allDeliveredOrCompleted = childStatuses.stream().allMatch(s ->
+                OrderState.DELIVERED.getCode().equals(s) || OrderState.COMPLETED.getCode().equals(s));
+        boolean hasDelivered = childStatuses.stream().anyMatch(s -> OrderState.DELIVERED.getCode().equals(s));
+        if (allDeliveredOrCompleted && hasDelivered) {
+            return OrderState.DELIVERED.getCode();
+        }
+        boolean hasCreated = childStatuses.stream().anyMatch(s -> OrderState.CREATED.getCode().equals(s));
+        boolean hasPaying = childStatuses.stream().anyMatch(s -> OrderState.PAYING.getCode().equals(s));
+        boolean hasClosing = childStatuses.stream().anyMatch(s -> OrderState.CLOSING.getCode().equals(s));
+        boolean hasPayRecovering = childStatuses.stream().anyMatch(s -> OrderState.PAY_RECOVERING.getCode().equals(s));
+        boolean hasRefunding = childStatuses.stream().anyMatch(s -> OrderState.REFUNDING.getCode().equals(s));
+        boolean hasRefundFailed = childStatuses.stream().anyMatch(s -> OrderState.REFUND_FAILED.getCode().equals(s));
+        boolean allRefunded = childStatuses.stream().allMatch(s -> OrderState.REFUNDED.getCode().equals(s));
+        boolean hasPaidOrAfter = childStatuses.stream().anyMatch(s ->
+                OrderState.PAID.getCode().equals(s)
+                        || OrderState.DELIVERED.getCode().equals(s)
+                        || OrderState.COMPLETED.getCode().equals(s)
+                        || OrderState.REFUNDED.getCode().equals(s));
+        if (hasRefunding) {
+            return OrderState.REFUNDING.getCode();
+        }
+        if (allRefunded) {
+            return OrderState.REFUNDED.getCode();
+        }
+        if (hasRefundFailed) {
+            return OrderState.REFUND_FAILED.getCode();
+        }
+        if (!hasCreated && hasPaidOrAfter) {
+            return OrderState.PAID.getCode();
+        }
+        if (!hasPaidOrAfter && hasPayRecovering) {
+            return OrderState.PAY_RECOVERING.getCode();
+        }
+        if (!hasPaidOrAfter && hasClosing) {
+            return OrderState.CLOSING.getCode();
+        }
+        if (!hasPaidOrAfter && hasPaying) {
+            return OrderState.PAYING.getCode();
+        }
+        return OrderState.CREATED.getCode();
+    }
+
+    /**
+     * 二次确认校验：
+     * 1) token 必须存在且未过期
+     * 2) 当前实时快照指纹必须与确认阶段一致
+     */
+    private void validateConfirmToken(Long userId, OrderSubmitReq req) {
+        if (req == null || !StringUtils.hasText(req.getConfirmToken())) {
+            ExceptionUtil.throwException(OrderExceptionEnum.ORDER_CONFIRM_INVALID);
+        }
+        String key = RedisKeyEnum.ORDER_CONFIRM_TOKEN.getKey(userId, req.getConfirmToken());
+        String fingerprint = orderRedisTemplate.opsForValue().get(key);
+        if (!StringUtils.hasText(fingerprint)) {
+            ExceptionUtil.throwException(OrderExceptionEnum.ORDER_CONFIRM_INVALID);
+        }
+        PrecheckSnapshot snapshot = buildPrecheckSnapshot(userId, req);
+        if (!snapshot.ready || !fingerprint.equals(snapshot.fingerprint)) {
+            ExceptionUtil.throwException(OrderExceptionEnum.ORDER_CONFIRM_INVALID);
+        }
+        orderRedisTemplate.delete(key);
+    }
+
+    /**
+     * 构建实时校验快照：
+     * 以DB为准检查地址、购物车、商品状态、库存、价格，并生成前端差异明细与指纹。
+     */
+    private PrecheckSnapshot buildPrecheckSnapshot(Long userId, OrderSubmitReq req) {
+        LambdaQueryWrapper<Address> addressQuery = new LambdaQueryWrapper<>();
+        addressQuery.eq(Address::getId, req.getAddressId()).eq(Address::getUserId, userId);
+        Address address = addressMapper.selectOne(addressQuery);
+        if (address == null) {
+            ExceptionUtil.throwException(OrderExceptionEnum.ADDRESS_NOT_EXIST);
+        }
+
+        LambdaQueryWrapper<CartItem> cartQuery = new LambdaQueryWrapper<>();
+        cartQuery.eq(CartItem::getUserId, userId).eq(CartItem::getChecked, 1);
+        if (req.getShopId() != null) {
+            cartQuery.eq(CartItem::getShopId, req.getShopId());
+        }
+        List<CartItem> cartItems = cartItemMapper.selectList(cartQuery);
+        if (cartItems == null || cartItems.isEmpty()) {
+            ExceptionUtil.throwException(OrderExceptionEnum.CART_EMPTY);
+        }
+
+        List<Long> productIds = cartItems.stream().map(CartItem::getProductId).distinct().collect(Collectors.toList());
+        Map<Long, Product> productMap = new HashMap<>();
+        if (!productIds.isEmpty()) {
+            productMap = productMapper.selectBatchIds(productIds).stream().collect(Collectors.toMap(Product::getId, p -> p));
+        }
+
+        List<OrderConfirmVO.ItemResult> results = new ArrayList<>();
+        BigDecimal totalAmount = BigDecimal.ZERO;
+        boolean ready = true;
+        StringBuilder fingerprintSource = new StringBuilder();
+        fingerprintSource.append("u=").append(userId).append("|a=").append(req.getAddressId()).append("|s=").append(req.getShopId());
+
+        List<CartItem> sortedItems = new ArrayList<>(cartItems);
+        sortedItems.sort(Comparator.comparing(CartItem::getId));
+        for (CartItem item : sortedItems) {
+            Product product = productMap.get(item.getProductId());
+            OrderConfirmVO.ItemResult result = new OrderConfirmVO.ItemResult();
+            result.setCartItemId(item.getId());
+            result.setProductId(item.getProductId());
+            result.setShopId(item.getShopId());
+            result.setProductName(item.getProductName());
+            result.setQuantity(item.getQuantity());
+            result.setCartPrice(item.getPriceSnapshot());
+            result.setValid(true);
+
+            if (product == null) {
+                result.setValid(false);
+                result.setReasonCode("PRODUCT_NOT_EXIST");
+                result.setReasonMsg("商品不存在");
+                ready = false;
+                results.add(result);
+                fingerprintSource.append("|i=").append(item.getId()).append(":missing");
+                continue;
+            }
+
+            result.setProductName(product.getName());
+            result.setCurrentPrice(product.getPrice());
+            result.setAvailableStock(product.getStock());
+
+            if (!Objects.equals(product.getStatus(), 1)) {
+                result.setValid(false);
+                result.setReasonCode("PRODUCT_OFFLINE");
+                result.setReasonMsg("商品已下架");
+                ready = false;
+            } else if (item.getQuantity() == null || item.getQuantity() <= 0) {
+                result.setValid(false);
+                result.setReasonCode("INVALID_QUANTITY");
+                result.setReasonMsg("购买数量非法");
+                ready = false;
+            } else if (product.getStock() == null || product.getStock() < item.getQuantity()) {
+                result.setValid(false);
+                result.setReasonCode("STOCK_NOT_ENOUGH");
+                result.setReasonMsg("库存不足");
+                ready = false;
+            } else if (item.getPriceSnapshot() == null || product.getPrice() == null || item.getPriceSnapshot().compareTo(product.getPrice()) != 0) {
+                result.setValid(false);
+                result.setReasonCode("PRICE_CHANGED");
+                result.setReasonMsg("商品价格已变动");
+                ready = false;
+            }
+
+            if (product.getPrice() != null && item.getQuantity() != null && item.getQuantity() > 0) {
+                totalAmount = totalAmount.add(product.getPrice().multiply(BigDecimal.valueOf(item.getQuantity())));
+            }
+
+            results.add(result);
+            fingerprintSource.append("|i=").append(item.getId())
+                    .append(":p=").append(item.getProductId())
+                    .append(",q=").append(item.getQuantity())
+                    .append(",cp=").append(item.getPriceSnapshot())
+                    .append(",np=").append(product.getPrice())
+                    .append(",st=").append(product.getStatus())
+                    .append(",sk=").append(product.getStock());
+        }
+
+        PrecheckSnapshot snapshot = new PrecheckSnapshot();
+        snapshot.ready = ready;
+        snapshot.totalAmount = totalAmount;
+        snapshot.items = results;
+        snapshot.fingerprint = sha256Hex(fingerprintSource.toString());
+        return snapshot;
+    }
+
+    private String sha256Hex(String source) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(source.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hash) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static class PrecheckSnapshot {
+        private boolean ready;
+        private String fingerprint;
+        private BigDecimal totalAmount;
+        private List<OrderConfirmVO.ItemResult> items;
     }
 }

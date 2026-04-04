@@ -36,7 +36,7 @@ public class MqLocalMessage implements Serializable {
     private String content;
 
     /**
-     * 状态：0-新建 1-发送成功 2-发送失败
+     * 状态：0-新建 1-发送成功 2-发送失败 3-发送中（任务抢占中）
      */
     private Integer state;
 
