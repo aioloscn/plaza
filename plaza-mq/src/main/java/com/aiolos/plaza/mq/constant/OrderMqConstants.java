@@ -28,4 +28,16 @@ public class OrderMqConstants {
      * 对应 application.yml 中的 spring.cloud.stream.bindings.orderPaid-out-0
      */
     public static final String BINDING_ORDER_PAID_OUT = "orderPaid-out-0";
+
+    /**
+     * 普通单异步库存预占 Binding Name (Output)
+     * 对应 application.yml 中的 spring.cloud.stream.bindings.orderReserve-out-0
+     */
+    public static final String BINDING_ORDER_RESERVE_OUT = "orderReserve-out-0";
+
+    /**
+     * 支付补偿失败后的退款 Binding Name (Output)
+     * 对应 application.yml 中的 spring.cloud.stream.bindings.orderRefund-out-0
+     */
+    public static final String BINDING_ORDER_REFUND_OUT = "orderRefund-out-0";
 }

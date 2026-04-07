@@ -26,9 +26,15 @@ public class MqLocalMessage implements Serializable {
     private String topic;
 
     /**
-     * 消息标签
+     * 消息标签/扩展元数据
+     * 预留扩展字段，避免继续承载核心治理语义
      */
     private String tag;
+
+    /**
+     * 消息类型：用于区分治理策略、清理周期与人工排障维度
+     */
+    private String messageType;
 
     /**
      * 消息内容
@@ -46,9 +52,24 @@ public class MqLocalMessage implements Serializable {
     private Integer retryCount;
 
     /**
+     * 下次可重试时间
+     */
+    private LocalDateTime nextRetryTime;
+
+    /**
+     * 最大重试次数
+     */
+    private Integer maxRetryCount;
+
+    /**
      * 业务键（如订单号）
      */
     private String businessKey;
+
+    /**
+     * 最近一次失败原因
+     */
+    private String failReason;
 
     /**
      * 创建时间

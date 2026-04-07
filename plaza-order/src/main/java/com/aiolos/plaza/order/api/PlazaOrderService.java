@@ -1,4 +1,4 @@
-package com.aiolos.plaza.order.service;
+package com.aiolos.plaza.order.api;
 
 import com.aiolos.plaza.order.model.bo.OrderSubmitReq;
 import com.aiolos.plaza.order.model.vo.OrderConfirmVO;
@@ -13,7 +13,7 @@ public interface PlazaOrderService {
      * 提交订单
      * @param userId 用户ID
      * @param req 提交请求
-     * @return 支付单号 (ParentOrderSn)
+     * @return 支付单号（ParentOrderSn）
      */
     String submit(Long userId, OrderSubmitReq req);
 
@@ -33,25 +33,25 @@ public interface PlazaOrderService {
     /**
      * 查询订单列表
      * @param userId 用户ID
-     * @param status 订单状态（可选）
+     * @param status 订单状态（可空）
      * @return 订单列表
      */
     List<OrderListVO> list(Long userId, Integer status);
 
     /**
-     * 处理超时未支付订单（批量）
+     * 批量处理超时未支付订单
      */
     void cancelTimeoutOrders();
 
     /**
      * 父订单状态对账：
-     * 按批次扫描父订单并基于子订单聚合规则做状态自愈。
-     * @param batchSize 扫描批次大小，<=0 时使用默认值
+     * 按批次扫描父订单并基于子订单聚合规则做状态自愈
+     * @param batchSize 扫描批次大小，`<= 0` 时使用默认值
      */
     void reconcileParentOrderStatus(int batchSize);
 
     /**
-     * 取消单个订单（MQ触发）
+     * 取消单个订单（MQ 触发）
      * @param orderId 订单ID
      */
     void cancelOrder(Long orderId);

@@ -1,6 +1,6 @@
 package com.aiolos.plaza.order.mq.consumer;
 
-import com.aiolos.plaza.order.service.PlazaOrderService;
+import com.aiolos.plaza.order.api.PlazaOrderService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;

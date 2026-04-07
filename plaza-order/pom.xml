@@ -25,10 +25,6 @@
         </dependency>
         <dependency>
             <groupId>com.aiolos</groupId>
-            <artifactId>common-redis</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.aiolos</groupId>
             <artifactId>common-exception</artifactId>
         </dependency>
         <dependency>

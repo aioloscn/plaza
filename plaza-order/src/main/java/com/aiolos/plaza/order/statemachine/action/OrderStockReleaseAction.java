@@ -68,6 +68,8 @@ public class OrderStockReleaseAction implements Action<OrderState, OrderEvent> {
             } catch (Exception compensateException) {
                 log.error("订单取消归还库存补偿异常，订单ID: {}", orderId, compensateException);
             }
+            // 当前 action 与前面的 preStateChange 落库处于同一外层事务中；
+            // 这里标记回滚后，interceptor 已执行的 CLOSED 状态更新也会一起回滚
             TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
             ExceptionUtil.throwException(OrderExceptionEnum.ORDER_STOCK_RELEASE_FAIL);
         }

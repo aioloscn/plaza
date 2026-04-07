@@ -2,7 +2,7 @@ spring:
   cloud:
     stream:
       function:
-        definition: orderTimeout;stockDeduct;cartChange;orderPaid
+        definition: orderTimeout;stockDeduct;cartChange;orderPaid;orderReserve;orderRefund
       default:
         content-type: application/json
         consumer:
@@ -28,6 +28,16 @@ spring:
           group: stock-deduct-group
         cartChange-out-0:
           destination: cart-change-topic
+        orderReserve-out-0:
+          destination: order-reserve-topic
+        orderReserve-in-0:
+          destination: order-reserve-topic
+          group: order-reserve-group
+        orderRefund-out-0:
+          destination: order-refund-topic
+        orderRefund-in-0:
+          destination: order-refund-topic
+          group: order-refund-group
       rocketmq:
         binder:
           name-server: ${ROCKETMQ_HOST:127.0.0.1}:9876

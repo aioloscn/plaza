@@ -8,9 +8,9 @@ public class CartUpdateReq implements Serializable {
     private static final long serialVersionUID = 1L;
     
     /**
-     * 商品ID
+     * 购物车项ID
      */
-    private Long productId;
+    private Long cartItemId;
     
     /**
      * 更新后的数量

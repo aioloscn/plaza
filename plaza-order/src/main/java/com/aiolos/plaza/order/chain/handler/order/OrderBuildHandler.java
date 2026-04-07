@@ -3,48 +3,34 @@ package com.aiolos.plaza.order.chain.handler.order;
 import com.aiolos.common.exception.util.ExceptionUtil;
 import com.aiolos.plaza.enums.OrderState;
 import com.aiolos.plaza.enums.OrderType;
-import com.aiolos.plaza.enums.RedisKeyEnum;
 import com.aiolos.plaza.enums.exceptions.OrderExceptionEnum;
 import com.aiolos.plaza.mapper.OrderItemMapper;
 import com.aiolos.plaza.mapper.OrderMapper;
 import com.aiolos.plaza.mapper.ParentOrderMapper;
-import com.aiolos.plaza.mapper.ProductMapper;
 import com.aiolos.plaza.model.po.Address;
 import com.aiolos.plaza.model.po.CartItem;
 import com.aiolos.plaza.model.po.Order;
 import com.aiolos.plaza.model.po.OrderItem;
 import com.aiolos.plaza.model.po.ParentOrder;
-import com.aiolos.plaza.model.po.Product;
 import com.aiolos.plaza.order.chain.Chain;
 import com.aiolos.plaza.order.chain.ChainHandler;
 import com.aiolos.plaza.order.chain.context.OrderCreateContext;
-import com.aiolos.plaza.order.coreflow.inventory.model.InventoryReserveItem;
-import com.aiolos.plaza.order.coreflow.inventory.service.OrderInventoryService;
+import com.aiolos.plaza.order.coreflow.inventory.model.InventoryProductSnapshot;
+import com.aiolos.plaza.order.coreflow.product.ProductSnapshotReader;
+import com.aiolos.plaza.order.domain.status.OrderStatusMetadataResolver;
 import com.aiolos.plaza.orderno.provider.api.OrderNoApi;
-import com.alibaba.fastjson.JSON;
 import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Component
 public class OrderBuildHandler implements ChainHandler<OrderCreateContext> {
-
-    @Autowired
-    @Qualifier("shopRedisTemplate")
-    private StringRedisTemplate shopRedisTemplate;
-
-    @Autowired
-    private ProductMapper productMapper;
 
     @Autowired
     private OrderMapper orderMapper;
@@ -56,10 +42,13 @@ public class OrderBuildHandler implements ChainHandler<OrderCreateContext> {
     private ParentOrderMapper parentOrderMapper;
 
     @Autowired
-    private OrderInventoryService orderInventoryService;
+    private ProductSnapshotReader productSnapshotReader;
 
     @DubboReference
     private OrderNoApi orderNoApi;
+
+    @Autowired
+    private OrderStatusMetadataResolver orderStatusMetadataResolver;
 
     @Override
     public void handle(OrderCreateContext context, Chain<OrderCreateContext> chain) {
@@ -68,6 +57,13 @@ public class OrderBuildHandler implements ChainHandler<OrderCreateContext> {
         
         Address address = context.getAddress();
         var req = context.getReq();
+        // 构单阶段统一通过商品快照读取组件取数，避免订单域直接依赖底层商品来源
+        Map<Long, InventoryProductSnapshot> productSnapshotMap = productSnapshotReader.loadSnapshots(
+                context.getCartItems().stream()
+                        .map(CartItem::getProductId)
+                        .distinct()
+                        .collect(Collectors.toList())
+        );
 
         for (Map.Entry<Long, List<CartItem>> entry : context.getShopCartMap().entrySet()) {
             Long shopId = entry.getKey();
@@ -75,20 +71,15 @@ public class OrderBuildHandler implements ChainHandler<OrderCreateContext> {
 
             String orderSn = orderNoApi.nextChildOrderSn();
             BigDecimal totalAmount = BigDecimal.ZERO;
-            Map<Long, Integer> reserveProductQtyMap = new LinkedHashMap<>();
 
             for (CartItem item : shopItems) {
                 Long productId = item.getProductId();
                 context.getAllCartIds().add(item.getId());
 
-                Product product = productMapper.selectById(productId);
-                if (product == null || product.getStatus() != 1) {
+                InventoryProductSnapshot product = productSnapshotMap.get(productId);
+                if (product == null || product.getStatus() == null || product.getStatus() != 1) {
                     ExceptionUtil.throwException(OrderExceptionEnum.PRODUCT_NOT_EXIST);
                 }
-                shopRedisTemplate.opsForValue().set(RedisKeyEnum.PRODUCT_INFO.getKey(productId), JSON.toJSONString(product), 1, TimeUnit.DAYS);
-                shopRedisTemplate.opsForValue().setIfAbsent(RedisKeyEnum.PRODUCT_STOCK.getKey(productId), String.valueOf(product.getStock()));
-
-                reserveProductQtyMap.merge(productId, item.getQuantity(), Integer::sum);
 
                 BigDecimal price = product.getPrice() != null ? product.getPrice() : BigDecimal.ZERO;
                 item.setPriceSnapshot(price);
@@ -107,10 +98,9 @@ public class OrderBuildHandler implements ChainHandler<OrderCreateContext> {
             order.setFreightAmount(BigDecimal.ZERO);
             order.setPromotionAmount(BigDecimal.ZERO);
             order.setPayType(req.getPayType());
-            order.setStatus(OrderState.CREATED.getCode());
+            // 普通单先落成“锁库存中”，由异步消息驱动库存预占，成功后再推进到待付款
+            orderStatusMetadataResolver.fill(order, OrderState.RESERVING.getCode());
             order.setAddressId(req.getAddressId());
-            String reservationNo = "RSV-" + orderSn;
-            order.setReservationNo(reservationNo);
 
             order.setReceiverName(address.getName());
             order.setReceiverPhone(address.getTel());
@@ -132,12 +122,13 @@ public class OrderBuildHandler implements ChainHandler<OrderCreateContext> {
             context.getOrderIds().add(order.getId());
 
             for (CartItem cartItem : shopItems) {
+                InventoryProductSnapshot product = productSnapshotMap.get(cartItem.getProductId());
                 OrderItem orderItem = new OrderItem();
                 orderItem.setOrderId(order.getId());
                 orderItem.setOrderSn(order.getOrderSn());
                 orderItem.setProductId(cartItem.getProductId());
-                orderItem.setProductPic(cartItem.getProductImage());
-                orderItem.setProductName(cartItem.getProductName());
+                orderItem.setProductPic(product != null ? product.getProductImage() : cartItem.getProductImage());
+                orderItem.setProductName(product != null ? product.getProductName() : cartItem.getProductName());
                 orderItem.setProductPrice(cartItem.getPriceSnapshot());
                 orderItem.setProductQuantity(cartItem.getQuantity());
 
@@ -147,12 +138,6 @@ public class OrderBuildHandler implements ChainHandler<OrderCreateContext> {
                 orderItemMapper.insert(orderItem);
             }
 
-            List<InventoryReserveItem> reserveItems = new ArrayList<>();
-            for (Map.Entry<Long, Integer> reserveEntry : reserveProductQtyMap.entrySet()) {
-                reserveItems.add(new InventoryReserveItem(reserveEntry.getKey(), reserveEntry.getValue()));
-            }
-            orderInventoryService.reserve(orderSn, context.getUserId(), reserveItems, LocalDateTime.now().plusMinutes(10));
-
             context.setParentTotalAmount(context.getParentTotalAmount().add(totalAmount));
         }
 
@@ -161,7 +146,7 @@ public class OrderBuildHandler implements ChainHandler<OrderCreateContext> {
         parentOrder.setUserId(context.getUserId());
         parentOrder.setTotalAmount(context.getParentTotalAmount());
         parentOrder.setPayAmount(context.getParentTotalAmount());
-        parentOrder.setStatus(OrderState.CREATED.getCode());
+        orderStatusMetadataResolver.fill(parentOrder, OrderState.RESERVING.getCode());
         parentOrder.setPayType(req.getPayType());
         parentOrder.setOrderType(OrderType.NORMAL.getCode());
         parentOrder.setDeleteStatus(0);
@@ -171,4 +156,5 @@ public class OrderBuildHandler implements ChainHandler<OrderCreateContext> {
         
         chain.proceed(context);
     }
+
 }

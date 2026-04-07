@@ -14,7 +14,10 @@ CREATE TABLE `orders` (
   `freight_amount` decimal(10,2) DEFAULT NULL COMMENT '运费金额',
   `promotion_amount` decimal(10,2) DEFAULT NULL COMMENT '促销优化金额',
   `pay_type` int(1) DEFAULT NULL COMMENT '支付方式：0->未支付；1->支付宝；2->微信',
-  `status` int(1) DEFAULT NULL COMMENT '订单状态：0->待付款；1->待发货；2->已发货；3->已完成；4->已关闭；5->无效订单',
+  `status` int(1) DEFAULT NULL COMMENT '展示态/兼容态：0->待付款；1->待发货；2->已发货；3->已完成；4->已关闭；5->无效订单；6->支付中；7->关闭确认中；8->支付补偿中；9->退款中；10->已退款；11->退款失败；12->锁库存中',
+  `payment_status` int(1) DEFAULT NULL COMMENT '支付维度状态：0->未支付；1->支付中；2->部分已支付；3->已支付；4->支付补偿中；5->退款中；6->已退款；7->退款失败',
+  `fulfillment_status` int(1) DEFAULT NULL COMMENT '履约维度状态：0->待履约；1->锁库存中；2->待发货；3->部分已发货；4->已发货；5->已完成；6->已关闭',
+  `aftersale_status` int(1) DEFAULT NULL COMMENT '售后维度状态：0->无售后；1->退款中；2->部分已退款；3->已退款；4->退款失败',
   `address_id` bigint(20) DEFAULT NULL COMMENT '收货地址ID',
   `receiver_name` varchar(100) DEFAULT NULL COMMENT '收货人姓名',
   `receiver_phone` varchar(32) DEFAULT NULL COMMENT '收货人电话',
@@ -43,7 +46,10 @@ CREATE TABLE `parent_order` (
   `user_id` bigint(20) DEFAULT NULL COMMENT '用户ID',
   `total_amount` decimal(10,2) DEFAULT NULL COMMENT '总金额',
   `pay_amount` decimal(10,2) DEFAULT NULL COMMENT '应付总金额',
-  `status` int(1) DEFAULT NULL COMMENT '订单状态：0->待付款；1->待发货；2->已发货；3->已完成；4->已关闭；5->无效订单',
+  `status` int(1) DEFAULT NULL COMMENT '展示态/兼容态：0->待付款；1->待发货；2->已发货；3->已完成；4->已关闭；5->无效订单；6->支付中；7->关闭确认中；8->支付补偿中；9->退款中；10->已退款；11->退款失败；12->锁库存中',
+  `payment_status` int(1) DEFAULT NULL COMMENT '支付维度状态：0->未支付；1->支付中；2->部分已支付；3->已支付；4->支付补偿中；5->退款中；6->已退款；7->退款失败',
+  `fulfillment_status` int(1) DEFAULT NULL COMMENT '履约维度状态：0->待履约；1->锁库存中；2->待发货；3->部分已发货；4->已发货；5->已完成；6->已关闭',
+  `aftersale_status` int(1) DEFAULT NULL COMMENT '售后维度状态：0->无售后；1->退款中；2->部分已退款；3->已退款；4->退款失败',
   `pay_type` int(1) DEFAULT NULL COMMENT '支付方式：1->支付宝；2->微信',
   `order_type` int(1) DEFAULT '1' COMMENT '订单类型：1->普通订单；2->秒杀订单',
   `trade_no` varchar(64) DEFAULT NULL COMMENT '第三方支付流水号',
@@ -126,3 +132,99 @@ CREATE TABLE `stock_reservation_item` (
   UNIQUE KEY `uk_reservation_product` (`reservation_no`,`product_id`),
   KEY `idx_order_sn` (`order_sn`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COMMENT='库存预占明细';
+
+DROP TABLE IF EXISTS `mq_local_message`;
+CREATE TABLE `mq_local_message` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `topic` varchar(128) NOT NULL COMMENT '消息主题',
+  `tag` varchar(128) DEFAULT NULL COMMENT '扩展标签',
+  `message_type` varchar(64) NOT NULL COMMENT '消息类型',
+  `content` text NOT NULL COMMENT '消息内容',
+  `state` int(11) NOT NULL DEFAULT '0' COMMENT '状态：0-新建 1-成功 2-失败 3-处理中 4-死信',
+  `retry_count` int(11) NOT NULL DEFAULT '0' COMMENT '已重试次数',
+  `next_retry_time` datetime DEFAULT NULL COMMENT '下次可重试时间',
+  `max_retry_count` int(11) NOT NULL DEFAULT '5' COMMENT '最大重试次数',
+  `business_key` varchar(128) DEFAULT NULL COMMENT '业务键',
+  `fail_reason` varchar(500) DEFAULT NULL COMMENT '最近一次失败原因',
+  `create_time` datetime DEFAULT NULL COMMENT '创建时间',
+  `update_time` datetime DEFAULT NULL COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_topic_business_key` (`topic`,`business_key`),
+  KEY `idx_state_next_retry` (`state`,`next_retry_time`),
+  KEY `idx_message_type_state` (`message_type`,`state`)
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COMMENT='本地消息表';
+
+DROP TABLE IF EXISTS `payment_log`;
+CREATE TABLE `payment_log` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `order_sn` varchar(64) NOT NULL COMMENT '父订单号',
+  `pay_type` int(1) DEFAULT NULL COMMENT '支付方式',
+  `trade_no` varchar(64) DEFAULT NULL COMMENT '第三方支付流水号',
+  `total_amount` decimal(10,2) DEFAULT NULL COMMENT '支付金额',
+  `buyer_id` varchar(64) DEFAULT NULL COMMENT '买家在支付平台的账号/ID',
+  `payment_time` datetime DEFAULT NULL COMMENT '支付时间',
+  `create_time` datetime DEFAULT NULL COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_order_trade_no` (`order_sn`,`trade_no`)
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COMMENT='支付流水日志表';
+
+DROP TABLE IF EXISTS `payment_compensation_task`;
+CREATE TABLE `payment_compensation_task` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `task_no` varchar(64) NOT NULL COMMENT '补偿任务号',
+  `business_key` varchar(128) NOT NULL COMMENT '幂等业务键',
+  `compensation_type` int(11) NOT NULL COMMENT '补偿类型',
+  `parent_order_sn` varchar(64) DEFAULT NULL COMMENT '父订单号',
+  `order_sn` varchar(64) DEFAULT NULL COMMENT '子订单号',
+  `trade_no` varchar(64) DEFAULT NULL COMMENT '第三方支付流水号',
+  `refund_request_no` varchar(64) DEFAULT NULL COMMENT '退款请求号',
+  `status` int(11) NOT NULL DEFAULT '0' COMMENT '任务状态',
+  `retry_count` int(11) NOT NULL DEFAULT '0' COMMENT '重试次数',
+  `max_retry_count` int(11) NOT NULL DEFAULT '8' COMMENT '最大重试次数',
+  `next_retry_time` datetime DEFAULT NULL COMMENT '下次重试时间',
+  `reason_code` varchar(64) DEFAULT NULL COMMENT '原因编码',
+  `third_party_status` varchar(64) DEFAULT NULL COMMENT '最近一次第三方状态',
+  `fail_reason` varchar(500) DEFAULT NULL COMMENT '最近一次失败原因',
+  `create_time` datetime DEFAULT NULL COMMENT '创建时间',
+  `update_time` datetime DEFAULT NULL COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_task_no` (`task_no`),
+  UNIQUE KEY `uk_business_key` (`business_key`),
+  KEY `idx_status_next_retry` (`status`,`next_retry_time`)
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COMMENT='支付补偿任务表';
+
+DROP TABLE IF EXISTS `refund_order`;
+CREATE TABLE `refund_order` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `refund_request_no` varchar(64) NOT NULL COMMENT '退款请求号',
+  `parent_order_sn` varchar(64) NOT NULL COMMENT '父订单号',
+  `trade_no` varchar(64) DEFAULT NULL COMMENT '第三方支付流水号',
+  `pay_type` int(1) DEFAULT NULL COMMENT '支付方式',
+  `refund_amount` decimal(10,2) DEFAULT NULL COMMENT '退款金额',
+  `status` int(11) NOT NULL DEFAULT '0' COMMENT '退款单状态：0-待退款，1-退款处理中，2-退款成功，3-退款失败，4-待人工介入，5-已关闭',
+  `retry_count` int(11) NOT NULL DEFAULT '0' COMMENT '重试次数',
+  `max_retry_count` int(11) NOT NULL DEFAULT '8' COMMENT '最大重试次数',
+  `next_retry_time` datetime DEFAULT NULL COMMENT '下次重试时间',
+  `reason_code` varchar(64) DEFAULT NULL COMMENT '退款原因编码',
+  `fail_reason` varchar(500) DEFAULT NULL COMMENT '最近一次失败原因',
+  `refund_time` datetime DEFAULT NULL COMMENT '退款成功时间',
+  `create_time` datetime DEFAULT NULL COMMENT '创建时间',
+  `update_time` datetime DEFAULT NULL COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_refund_request_no` (`refund_request_no`),
+  KEY `idx_parent_order_status` (`parent_order_sn`,`status`)
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COMMENT='退款单表';
+
+DROP TABLE IF EXISTS `refund_log`;
+CREATE TABLE `refund_log` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `refund_request_no` varchar(64) NOT NULL COMMENT '退款请求号',
+  `action_type` varchar(32) DEFAULT NULL COMMENT '动作类型：APPLY/QUERY/CALLBACK/RECONCILE',
+  `action_status` varchar(32) DEFAULT NULL COMMENT '动作结果：RECEIVED/SUCCESS/PROCESSING',
+  `request_payload` text COMMENT '请求报文',
+  `response_payload` text COMMENT '响应报文',
+  `message` varchar(500) DEFAULT NULL COMMENT '补充说明',
+  `create_time` datetime DEFAULT NULL COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_refund_request_no` (`refund_request_no`)
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COMMENT='退款日志表';

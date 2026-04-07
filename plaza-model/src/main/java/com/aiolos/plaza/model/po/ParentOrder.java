@@ -57,6 +57,21 @@ public class ParentOrder implements Serializable {
     private Integer status;
 
     /**
+     * 支付维度状态
+     */
+    private Integer paymentStatus;
+
+    /**
+     * 履约维度状态
+     */
+    private Integer fulfillmentStatus;
+
+    /**
+     * 售后维度状态
+     */
+    private Integer aftersaleStatus;
+
+    /**
      * 支付方式：1->支付宝；2->微信
      */
     private Integer payType;

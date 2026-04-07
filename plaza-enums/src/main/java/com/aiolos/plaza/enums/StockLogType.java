@@ -7,7 +7,8 @@ public enum StockLogType {
     RESERVE_FREEZE(4, "预占冻结"),
     PAY_CONFIRM(5, "支付确认"),
     RESERVE_RELEASE(6, "预占释放"),
-    RESERVE_EXPIRE(7, "预占过期");
+    RESERVE_EXPIRE(7, "预占过期"),
+    REFUND_ROLLBACK(8, "退款回补");
 
     private final Integer code;
     private final String desc;

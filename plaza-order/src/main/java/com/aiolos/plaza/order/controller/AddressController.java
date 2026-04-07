@@ -3,6 +3,7 @@ package com.aiolos.plaza.order.controller;
 import com.aiolos.common.enums.error.ErrorEnum;
 import com.aiolos.common.exception.util.ExceptionUtil;
 import com.aiolos.common.model.ContextInfo;
+import com.aiolos.plaza.enums.exceptions.OrderExceptionEnum;
 import com.aiolos.plaza.model.po.Address;
 import com.aiolos.plaza.service.AddressService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -51,25 +52,58 @@ public class AddressController {
         if (userId == null) {
             ExceptionUtil.throwException(ErrorEnum.USER_NOT_LOGGED_IN);
         }
-        // 确保只能修改自己的地址
-        // 实际上应该先查询校验，这里暂略
+        if (address == null || address.getId() == null) {
+            ExceptionUtil.throwException(OrderExceptionEnum.ADDRESS_NOT_EXIST);
+        }
+        // 严格按 id + userId 校验归属，防止越权修改
+        Address existing = addressService.getOne(new LambdaQueryWrapper<Address>()
+                .eq(Address::getId, address.getId())
+                .eq(Address::getUserId, userId)
+                .last("LIMIT 1"));
+        if (existing == null) {
+            ExceptionUtil.throwException(OrderExceptionEnum.ADDRESS_NOT_EXIST);
+        }
         address.setUserId(userId);
 
         if (Boolean.TRUE.equals(address.getIsDefault())) {
             clearDefault(userId);
         }
-        return addressService.updateById(address);
+        return addressService.update(address, new LambdaUpdateWrapper<Address>()
+                .eq(Address::getId, address.getId())
+                .eq(Address::getUserId, userId));
     }
 
     @DeleteMapping("/{id}")
     public Boolean delete(@PathVariable("id") Long id) {
-        // 这里最好也校验一下是否是当前用户的地址
-        return addressService.removeById(id);
+        Long userId = ContextInfo.getUserId();
+        if (userId == null) {
+            ExceptionUtil.throwException(ErrorEnum.USER_NOT_LOGGED_IN);
+        }
+        // 严格按 id + userId 删除，防止越权删除
+        boolean removed = addressService.remove(new LambdaQueryWrapper<Address>()
+                .eq(Address::getId, id)
+                .eq(Address::getUserId, userId));
+        if (!removed) {
+            ExceptionUtil.throwException(OrderExceptionEnum.ADDRESS_NOT_EXIST);
+        }
+        return true;
     }
 
     @GetMapping("/{id}")
     public Address get(@PathVariable("id") Long id) {
-        return addressService.getById(id);
+        Long userId = ContextInfo.getUserId();
+        if (userId == null) {
+            ExceptionUtil.throwException(ErrorEnum.USER_NOT_LOGGED_IN);
+        }
+        // 严格按 id + userId 查询，防止越权读取
+        Address address = addressService.getOne(new LambdaQueryWrapper<Address>()
+                .eq(Address::getId, id)
+                .eq(Address::getUserId, userId)
+                .last("LIMIT 1"));
+        if (address == null) {
+            ExceptionUtil.throwException(OrderExceptionEnum.ADDRESS_NOT_EXIST);
+        }
+        return address;
     }
 
     private void clearDefault(Long userId) {

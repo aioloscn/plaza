@@ -5,7 +5,7 @@ import com.aiolos.common.exception.util.ExceptionUtil;
 import com.aiolos.common.model.ContextInfo;
 import com.aiolos.plaza.enums.exceptions.SeckillExceptionEnum;
 import com.aiolos.plaza.order.model.bo.SeckillSubmitReq;
-import com.aiolos.plaza.order.service.PlazaSeckillService;
+import com.aiolos.plaza.order.api.PlazaSeckillService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.annotation.Resource;
@@ -30,7 +30,7 @@ public class SeckillController {
         }
         
         log.info("接收到秒杀请求: userId={}, req={}", userId, req);
-        // 如果内部抛出业务异常，会被全局异常处理器捕获，直接返回给前端对应信息
+        // 如果内部抛出业务异常，会被全局异常处理器捕获，并直接返回给前端对应信息
         boolean success = seckillService.submitSeckill(req, userId);
         if (success) {
             return "抢购排队中，请稍后查询结果";

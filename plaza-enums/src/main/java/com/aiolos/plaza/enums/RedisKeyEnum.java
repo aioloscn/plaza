@@ -1,8 +1,8 @@
 package com.aiolos.plaza.enums;
 
 /**
- * 统一管理 Redis Key，防止硬编码导致的锁失效或缓存冲突。
- * 包含 Key 的模板定义以及默认过期时间。
+ * 统一管理 Redis Key，防止硬编码导致的锁失效或缓存冲突
+ * 包含 Key 的模板定义以及默认过期时间
  */
 public enum RedisKeyEnum {
 

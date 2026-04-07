@@ -12,6 +12,8 @@ public interface OrderInventoryService {
 
     void release(String reservationNo);
 
+    void rollbackConfirmed(String reservationNo);
+
     void extendExpireTime(String reservationNo, LocalDateTime newExpireTime);
 
     void expireReservations(int batchSize);

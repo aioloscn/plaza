@@ -5,7 +5,7 @@ import com.aiolos.common.enums.error.ErrorEnum;
 import com.aiolos.common.exception.util.ExceptionUtil;
 import com.aiolos.plaza.order.model.bo.OrderSubmitReq;
 import com.aiolos.plaza.order.model.vo.OrderConfirmVO;
-import com.aiolos.plaza.order.service.PlazaOrderService;
+import com.aiolos.plaza.order.api.PlazaOrderService;
 import org.springframework.beans.factory.annotation.Autowired;
 import com.aiolos.plaza.order.model.vo.OrderListVO;
 import org.springframework.web.bind.annotation.*;

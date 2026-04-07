@@ -36,5 +36,21 @@ public enum OrderEvent {
     /**
      * 支付补偿失败（用于 PAY_RECOVERING -> REFUNDING）
      */
-    RECOVER_FAIL;
+    RECOVER_FAIL,
+    /**
+     * 预占成功（用于 RESERVING -> CREATED）
+     */
+    RESERVE_SUCCESS,
+    /**
+     * 用户申请退款（用于 PAID -> REFUNDING）
+     */
+    APPLY_REFUND,
+    /**
+     * 退款成功（用于 REFUNDING -> REFUNDED）
+     */
+    REFUND_SUCCESS,
+    /**
+     * 退款失败（用于 REFUNDING -> REFUND_FAILED）
+     */
+    REFUND_FAIL;
 }

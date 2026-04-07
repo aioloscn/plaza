@@ -25,13 +25,13 @@ public class OrderPaidConsumer {
     @Bean
     public Consumer<ParentOrder> orderPaid() {
         return parentOrder -> {
-            log.info("收到订单支付成功消息，父订单号: {}, 支付金额: {}", parentOrder.getParentOrderSn(), parentOrder.getPayAmount());
+            log.info("收到订单支付成功消息，父订单: {}, 支付金额: {}", parentOrder.getParentOrderSn(), parentOrder.getPayAmount());
             try {
                 long exists = paymentLogMapper.selectCount(new LambdaQueryWrapper<PaymentLog>()
                         .eq(PaymentLog::getOrderSn, parentOrder.getParentOrderSn())
                         .eq(PaymentLog::getTradeNo, parentOrder.getTradeNo()));
                 if (exists > 0) {
-                    log.info("支付流水已存在，跳过重复消费，父订单号: {}, tradeNo: {}", parentOrder.getParentOrderSn(), parentOrder.getTradeNo());
+                    log.info("支付流水已存在，跳过重复消费，父订单: {}, tradeNo: {}", parentOrder.getParentOrderSn(), parentOrder.getTradeNo());
                     return;
                 }
 
@@ -43,7 +43,7 @@ public class OrderPaidConsumer {
                 paymentLog.setPaymentTime(parentOrder.getPaymentTime());
                 paymentLog.setCreateTime(LocalDateTime.now());
                 
-                // 完善第三方流水号和买家账号
+                // 补充第三方流水号和买家账号
                 paymentLog.setTradeNo(parentOrder.getTradeNo());
                 paymentLog.setBuyerId(parentOrder.getBuyerId());
 
@@ -51,7 +51,7 @@ public class OrderPaidConsumer {
                 
                 log.info("支付流水日志记录成功，流水ID: {}", paymentLog.getId());
             } catch (Exception e) {
-                log.error("处理订单支付成功消息异常，父订单号: {}", parentOrder.getParentOrderSn(), e);
+                log.error("处理订单支付成功消息异常，父订单: {}", parentOrder.getParentOrderSn(), e);
                 throw new RuntimeException("处理订单支付成功消息异常", e); // 抛出异常触发重试
             }
         };

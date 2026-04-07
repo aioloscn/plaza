@@ -31,35 +31,44 @@ public class CartChangeConsumer {
             try {
                 // 判断操作类型
                 if (message.operateType() != null && message.operateType() == 2) {
-                    // 1. 物理删除购物车数据库记录
                     boolean remove = cartItemService.lambdaUpdate()
+                            .eq(CartItem::getId, message.cartItemId())
                             .eq(CartItem::getUserId, message.userId())
-                            .eq(CartItem::getProductId, message.productId())
                             .remove();
 
                     // 2. 物理删除 Redis 缓存（防止并发回源导致的脏数据复活）
                     String cartKey = RedisKeyEnum.CART_USER.getKey(message.userId());
                     Boolean delete = stringRedisTemplate.delete(cartKey);
 
-                    log.info("Deleted cart item from MySQL and Redis, userId:{}, productId:{}, MySQL result: {}, Redis result: {}", 
-                            message.userId(), message.productId(), remove, delete);
+                    log.info("Deleted cart item from MySQL and Redis, userId:{}, productId:{}, cartItemId:{}, orderSn:{}, MySQL result: {}, Redis result: {}",
+                            message.userId(), message.productId(), message.cartItemId(), message.orderSn(), remove, delete);
                     return;
                 }
 
-                // 检查数据库中是否已存在该商品
-                CartItem existingItem = cartItemService.lambdaQuery().eq(CartItem::getUserId, message.userId()).eq(CartItem::getProductId, message.productId()).one();
+                CartItem existingItem = cartItemService.lambdaQuery()
+                        .eq(CartItem::getId, message.cartItemId())
+                        .eq(CartItem::getUserId, message.userId())
+                        .one();
                 
                 if (existingItem != null) {
                     // 更新
                     CartItem updateItem = new CartItem();
                     updateItem.setId(existingItem.getId());
+                    updateItem.setShopId(message.shopId());
+                    updateItem.setProductId(message.productId());
                     updateItem.setQuantity(message.quantity());
+                    updateItem.setChecked(message.checked());
+                    updateItem.setPriceSnapshot(message.priceSnapshot());
+                    updateItem.setProductName(message.productName());
+                    updateItem.setProductImage(message.productImage());
+                    updateItem.setStatus(message.status());
                     updateItem.setUpdateTime(java.time.LocalDateTime.now());
                     cartItemService.updateById(updateItem);
                 } else {
                     // 新增
                     CartItem newItem = new CartItem();
                     BeanUtils.copyProperties(message, newItem);
+                    newItem.setId(message.cartItemId());
                     newItem.setCreateTime(java.time.LocalDateTime.now());
                     newItem.setUpdateTime(java.time.LocalDateTime.now());
                     cartItemService.save(newItem);

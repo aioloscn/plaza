@@ -94,6 +94,21 @@ public class Order implements Serializable {
     private Integer status;
 
     /**
+     * 支付维度状态
+     */
+    private Integer paymentStatus;
+
+    /**
+     * 履约维度状态
+     */
+    private Integer fulfillmentStatus;
+
+    /**
+     * 售后维度状态
+     */
+    private Integer aftersaleStatus;
+
+    /**
      * 收货地址ID
      */
     private Long addressId;

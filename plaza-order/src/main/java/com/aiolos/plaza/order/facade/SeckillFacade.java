@@ -1,4 +1,4 @@
-package com.aiolos.plaza.order.service.impl;
+package com.aiolos.plaza.order.facade;
 
 import com.aiolos.plaza.order.chain.ChainExecutor;
 import com.aiolos.plaza.order.chain.ChainHandler;
@@ -7,9 +7,8 @@ import com.aiolos.plaza.order.chain.handler.seckill.SeckillFreqLimitHandler;
 import com.aiolos.plaza.order.chain.handler.seckill.SeckillMessageSendHandler;
 import com.aiolos.plaza.order.chain.handler.seckill.SeckillStockDeductHandler;
 import com.aiolos.plaza.order.model.bo.SeckillSubmitReq;
-import com.aiolos.plaza.order.service.PlazaSeckillService;
+import com.aiolos.plaza.order.api.PlazaSeckillService;
 import com.aiolos.plaza.model.po.SeckillActivity;
-import com.aiolos.plaza.service.SeckillActivityService;
 import com.aiolos.common.exception.util.ExceptionUtil;
 import com.aiolos.plaza.enums.RedisKeyEnum;
 import com.aiolos.plaza.enums.exceptions.SeckillExceptionEnum;
@@ -27,7 +26,7 @@ import java.util.List;
 
 @Slf4j
 @Service
-public class PlazaSeckillServiceImpl implements PlazaSeckillService {
+public class SeckillFacade implements PlazaSeckillService {
 
     @Resource
     private ChainExecutor chainExecutor;

@@ -8,7 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
  * 订单号服务实现：
  * 1) 使用 Snowflake 位段结构生成分布式唯一ID；
  * 2) 输出固定长度（前缀 + 19位数字）便于索引与排障；
- * 3) 内置时钟回拨保护，降低重复ID风险。
+ * 3) 内置时钟回拨保护，降低重复ID风险
  */
 @DubboService
 public class OrderNoApiImpl implements OrderNoApi {

@@ -9,9 +9,9 @@ public class CartCheckReq implements Serializable {
     private static final long serialVersionUID = 1L;
     
     /**
-     * 要更新选中状态的商品ID列表，如果为空则更新所有
+     * 要更新选中状态的购物车项ID列表，如果为空则更新所有
      */
-    private List<Long> productIds;
+    private List<Long> cartItemIds;
     
     /**
      * 是否选中 1:是 0:否

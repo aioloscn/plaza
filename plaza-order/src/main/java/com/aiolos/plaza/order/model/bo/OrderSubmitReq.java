@@ -18,12 +18,12 @@ public class OrderSubmitReq implements Serializable {
     private Long shopId;
     
     /**
-     * 店铺备注映射 (shopId -> note)
+     * 店铺备注映射（shopId -> note）
      */
     private Map<Long, String> shopNotes;
 
     /**
-     * 支付方式：1->支付宝；2->微信
+     * 支付方式：1 -> 支付宝；2 -> 微信
      */
     private Integer payType;
 

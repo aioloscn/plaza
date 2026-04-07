@@ -20,6 +20,12 @@ public class OrderListVO implements Serializable {
     private BigDecimal payAmount;
     private Integer status;
     private String statusDesc;
+    private Integer paymentStatus;
+    private String paymentStatusDesc;
+    private Integer fulfillmentStatus;
+    private String fulfillmentStatusDesc;
+    private Integer aftersaleStatus;
+    private String aftersaleStatusDesc;
     private LocalDateTime createTime;
     
     /**

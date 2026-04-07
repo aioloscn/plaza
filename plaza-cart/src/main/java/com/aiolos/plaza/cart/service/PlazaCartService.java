@@ -20,7 +20,7 @@ public interface PlazaCartService {
     /**
      * 删除商品
      */
-    void deleteCartItem(Long userId, String deviceId, Long productId);
+    void deleteCartItem(Long userId, String deviceId, Long cartItemId);
     
     /**
      * 勾选商品

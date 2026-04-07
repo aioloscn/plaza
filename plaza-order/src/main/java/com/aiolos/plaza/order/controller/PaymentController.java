@@ -5,7 +5,7 @@ import com.aiolos.common.enums.error.ErrorEnum;
 import com.aiolos.common.exception.util.ExceptionUtil;
 import com.aiolos.common.model.ContextInfo;
 import com.aiolos.plaza.enums.PayType;
-import com.aiolos.plaza.order.service.PaymentService;
+import com.aiolos.plaza.order.api.PaymentService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -22,7 +22,7 @@ public class PaymentController {
     private PaymentService paymentService;
 
     /**
-     * 发起支付。
+     * 发起支付
      */
     @PostMapping("/pay")
     public String pay(@RequestParam String orderSn, @RequestParam(required = false) Integer payType, jakarta.servlet.http.HttpServletRequest request) {
@@ -43,11 +43,32 @@ public class PaymentController {
     }
 
     /**
-     * 支付回调（支付宝服务器调用，不校验登录态）。
+     * 支付回调（支付宝服务器调用，不校验登录）
      */
     @PostMapping("/pay/notify")
     @IgnoreAuth
     public String payNotify(@RequestParam Map<String, String> params) {
         return paymentService.payNotify(params);
+    }
+
+    /**
+     * 退款回调（兼容未来三方退款异步通知）
+     */
+    @PostMapping("/refund/notify")
+    @IgnoreAuth
+    public String refundNotify(@RequestParam Map<String, String> params) {
+        return paymentService.refundNotify(params);
+    }
+
+    /**
+     * 用户主动申请退款
+     */
+    @PostMapping("/refund")
+    public String refund(@RequestParam String parentOrderSn) {
+        Long userId = ContextInfo.getUserId();
+        if (userId == null) {
+            ExceptionUtil.throwException(ErrorEnum.USER_NOT_LOGGED_IN);
+        }
+        return paymentService.refund(userId, parentOrderSn);
     }
 }

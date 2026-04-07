@@ -18,6 +18,7 @@ public enum OrderExceptionEnum implements CommonError {
     ORDER_STATUS_ERROR(1008, "订单状态错误"),
     CREATE_PAY_FORM_FAIL(1009, "生成支付表单失败"),
     ORDER_CONFIRM_INVALID(1010, "订单信息已变更，请重新确认后提交"),
+    ORDER_REFUND_FAIL(1011, "订单退款失败"),
     ;
     
     private final Integer errCode;

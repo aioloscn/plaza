@@ -48,7 +48,11 @@ public enum OrderState {
     /**
      * 退款失败（终态）
      */
-    REFUND_FAILED(11, "退款失败");
+    REFUND_FAILED(11, "退款失败"),
+    /**
+     * 锁库存中
+     */
+    RESERVING(12, "锁库存中");
 
     private final Integer code;
     private final String desc;

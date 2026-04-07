@@ -36,19 +36,19 @@ public class OrderMessageProducer {
     /**
      * 发送库存扣减消息
      *
-     * @param message 库存扣减消息体
+     * @param message 库存扣减消息
      */
     public void sendStockDeductMessage(StockDeductMessage message) {
         try {
             streamBridge.send(OrderMqConstants.BINDING_STOCK_DEDUCT_OUT, MessageBuilder.withPayload(message).build());
-            log.info("异步发送扣减库存消息成功: {}", message);
+            log.info("异步发送库存扣减消息成功: {}", message);
         } catch (Exception e) {
-            log.error("异步发送扣减库存消息失败: {}", message, e);
+            log.error("异步发送库存扣减消息失败: {}", message, e);
         }
     }
 
     /**
-     * 发送购物车保存/删除消息
+     * 发送购物车保存或删除消息
      */
     public void sendCartSaveMessage(CartAsyncSaveMessage message) {
         try {
@@ -63,11 +63,11 @@ public class OrderMessageProducer {
      * 发送订单超时取消延迟消息
      *
      * @param orderId 订单ID
-     * @param delayLevel RocketMQ延迟级别
+     * @param delayLevel RocketMQ 延迟级别
      */
     public void sendOrderTimeoutMessage(Long orderId, int delayLevel) {
         try {
-            // 在 Spring Cloud Stream 中，通过 header "DELAY" 设置延迟级别
+            // Spring Cloud Stream 里通过 header `DELAY` 设置延迟级别
             Message<Long> timeoutMsg = MessageBuilder.withPayload(orderId)
                     .setHeader("DELAY", delayLevel)
                     .build();
@@ -80,10 +80,10 @@ public class OrderMessageProducer {
 
     /**
      * 秒杀事务消息发送流程：
-     * 1) 先发送半消息到 seckill-order-tx-topic
-     * 2) RocketMQ 回调本地事务监听器 executeLocalTransaction 执行下单事务
-     * 3) 监听器返回 COMMIT/ROLLBACK 后，Broker 决定半消息是否对消费者可见
-     * 4) 若事务状态不明确，Broker 后续会回查 checkLocalTransaction
+     * 1) 先发送半消息到 `seckill-order-tx-topic`
+     * 2) RocketMQ 回调本地事务监听器 `executeLocalTransaction` 执行下单事务
+     * 3) 监听器返回 COMMIT 或 ROLLBACK 后，Broker 决定半消息是否对消费者可见
+     * 4) 如果事务状态不明确，Broker 后续会回查 `checkLocalTransaction`
      */
     public void sendSeckillOrderTransactionMessage(SeckillOrderMessage message) {
         String parentOrderSn = orderNoApi.nextParentOrderSn();
@@ -100,7 +100,7 @@ public class OrderMessageProducer {
                 .orderSn(orderSn)
                 .addressId(message.addressId())
                 .build();
-        // 回查补偿需要的上下文字段，放入消息头，避免仅靠 payload 无法恢复活动维度信息
+        // 回查补偿需要的上下文字段放入消息头，避免仅靠 payload 无法恢复活动维度信息
         Message<SeckillStockDeductMessage> txMessage = MessageBuilder.withPayload(stockDeductMessage)
                 .setHeader("activityId", message.activityId())
                 .setHeader("userId", message.userId())

@@ -10,6 +10,8 @@ public record CartAsyncSaveMessage(
         Long userId,
         Long shopId,
         Long productId,
+        Long cartItemId,
+        String orderSn,
         Integer quantity,
         Integer checked,
         BigDecimal priceSnapshot,

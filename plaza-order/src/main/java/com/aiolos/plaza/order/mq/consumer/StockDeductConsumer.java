@@ -14,7 +14,7 @@ import java.time.LocalDateTime;
 import java.util.function.Consumer;
 
 /**
- * 监听扣减库存的异步消息
+ * 监听扣减数据库库存的异步消息
  */
 @Slf4j
 @Component
@@ -33,10 +33,10 @@ public class StockDeductConsumer {
             log.info("收到扣减数据库库存消息: {}", message);
             try {
                 if (message != null && message.productId() != null && message.quantity() != null) {
-                    // 使用数据库的乐观锁进行最终的安全扣减
+                    // 使用数据库层的乐观扣减，完成最终安全扣减
                     int rows = productMapper.deductStock(message.productId(), message.quantity());
                     if (rows > 0) {
-                        log.info("数据库库存扣减成功, productId: {}, quantity: {}", message.productId(), message.quantity());
+                        log.info("数据库库存扣减成功，productId: {}, quantity: {}", message.productId(), message.quantity());
                         
                         // 记录库存操作日志
                         ProductStockLog stockLog = new ProductStockLog();
@@ -47,8 +47,8 @@ public class StockDeductConsumer {
                         stockLog.setCreateTime(LocalDateTime.now());
                         productStockLogMapper.insert(stockLog);
                     } else {
-                        log.warn("数据库库存扣减失败(可能是由于多次投递或者库存不足), message: {}", message);
-                        // 根据实际业务，如果确认为超卖或异常，可以抛出异常触发RocketMQ重试，或者发送告警人工干预。
+                        log.warn("数据库库存扣减失败，可能是重复投递或库存不足，message: {}", message);
+                        // 根据实际业务，如果确认属于超卖或异常，可抛异常触发 RocketMQ 重试，或发告警人工介入
                     }
                 }
             } catch (Exception e) {

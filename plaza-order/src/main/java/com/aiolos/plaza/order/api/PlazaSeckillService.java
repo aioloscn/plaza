@@ -1,4 +1,4 @@
-package com.aiolos.plaza.order.service;
+package com.aiolos.plaza.order.api;
 
 import com.aiolos.plaza.order.model.bo.SeckillSubmitReq;
 
