@@ -1,7 +1,7 @@
 package com.aiolos.plaza.order.mq.consumer;
 
 import com.aiolos.plaza.mq.message.OrderRefundMessage;
-import com.aiolos.plaza.order.facade.PaymentFacade;
+import com.aiolos.plaza.order.application.payment.refund.PaymentRefundSettlementAppService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
@@ -17,7 +17,7 @@ import java.util.function.Consumer;
 public class OrderRefundConsumer {
 
     @Autowired
-    private PaymentFacade paymentService;
+    private PaymentRefundSettlementAppService paymentRefundSettlementAppService;
 
     @Bean
     public Consumer<OrderRefundMessage> orderRefund() {
@@ -26,7 +26,7 @@ public class OrderRefundConsumer {
                 return;
             }
             log.info("收到退款消息，parentOrderSn={}", message.parentOrderSn());
-            paymentService.handleRefund(message.parentOrderSn());
+            paymentRefundSettlementAppService.settle(message.parentOrderSn());
         };
     }
 }

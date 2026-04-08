@@ -5,7 +5,7 @@ import com.aiolos.common.enums.error.ErrorEnum;
 import com.aiolos.common.exception.util.ExceptionUtil;
 import com.aiolos.plaza.order.model.bo.OrderSubmitReq;
 import com.aiolos.plaza.order.model.vo.OrderConfirmVO;
-import com.aiolos.plaza.order.api.PlazaOrderService;
+import com.aiolos.plaza.order.application.order.OrderService;
 import org.springframework.beans.factory.annotation.Autowired;
 import com.aiolos.plaza.order.model.vo.OrderListVO;
 import org.springframework.web.bind.annotation.*;
@@ -17,7 +17,7 @@ import java.util.List;
 public class OrderController {
 
     @Autowired
-    private PlazaOrderService plazaOrderService;
+    private OrderService orderService;
 
     @PostMapping("/confirm")
     public OrderConfirmVO confirm(@RequestBody OrderSubmitReq req) {
@@ -25,7 +25,7 @@ public class OrderController {
         if (userId == null) {
             ExceptionUtil.throwException(ErrorEnum.USER_NOT_LOGGED_IN);
         }
-        return plazaOrderService.confirm(userId, req);
+        return orderService.confirm(userId, req);
     }
 
     /**
@@ -37,7 +37,7 @@ public class OrderController {
         if (userId == null) {
             ExceptionUtil.throwException(ErrorEnum.USER_NOT_LOGGED_IN);
         }
-        return plazaOrderService.submit(userId, req);
+        return orderService.submit(userId, req);
     }
     
     /**
@@ -49,7 +49,7 @@ public class OrderController {
         if (userId == null) {
             ExceptionUtil.throwException(ErrorEnum.USER_NOT_LOGGED_IN);
         }
-        return plazaOrderService.getPayInfo(userId, paySn);
+        return orderService.getPayInfo(userId, paySn);
     }
 
     /**
@@ -61,7 +61,7 @@ public class OrderController {
         if (userId == null) {
             ExceptionUtil.throwException(ErrorEnum.USER_NOT_LOGGED_IN);
         }
-        return plazaOrderService.getDetail(userId, id);
+        return orderService.getDetail(userId, id);
     }
 
     /**
@@ -73,6 +73,6 @@ public class OrderController {
         if (userId == null) {
             ExceptionUtil.throwException(ErrorEnum.USER_NOT_LOGGED_IN);
         }
-        return plazaOrderService.list(userId, status);
+        return orderService.list(userId, status);
     }
 }

@@ -13,13 +13,13 @@ import com.aiolos.plaza.model.po.OrderItem;
 import com.aiolos.plaza.model.po.ParentOrder;
 import com.aiolos.plaza.model.po.Product;
 import com.aiolos.plaza.model.po.Address;
-import com.aiolos.plaza.order.domain.outbox.OrderTimeoutLocalMessageSupport;
-import com.aiolos.plaza.order.domain.status.OrderStatusMetadataResolver;
+import com.aiolos.plaza.order.domain.outbox.OrderTimeoutOutboxAssembler;
+import com.aiolos.plaza.order.domain.order.status.OrderStatusMetadataResolver;
 import com.aiolos.plaza.service.AddressService;
 import com.aiolos.plaza.service.MqLocalMessageService;
 import com.aiolos.plaza.mq.message.SeckillStockDeductMessage;
-import com.aiolos.plaza.order.coreflow.inventory.model.InventoryReserveItem;
-import com.aiolos.plaza.order.coreflow.inventory.service.OrderInventoryService;
+import com.aiolos.plaza.order.domain.stock.reservation.InventoryReserveItem;
+import com.aiolos.plaza.order.application.stock.reservation.StockReservationService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
@@ -64,13 +64,13 @@ public class SeckillOrderTransactionListener implements RocketMQLocalTransaction
     private StringRedisTemplate stringRedisTemplate;
 
     @Resource
-    private OrderInventoryService orderInventoryService;
+    private StockReservationService stockReservationService;
 
     @Resource
     private MqLocalMessageService mqLocalMessageService;
 
     @Resource
-    private OrderTimeoutLocalMessageSupport orderTimeoutLocalMessageSupport;
+    private OrderTimeoutOutboxAssembler orderTimeoutOutboxAssembler;
 
     @Resource
     private OrderStatusMetadataResolver orderStatusMetadataResolver;
@@ -122,7 +122,7 @@ public class SeckillOrderTransactionListener implements RocketMQLocalTransaction
             parentOrder.setCreateTime(now);
             parentOrder.setUpdateTime(now);
             parentOrderMapper.insert(parentOrder);
-            String reservationNo = orderInventoryService.reserve(
+            String reservationNo = stockReservationService.reserve(
                     txContext.getOrderSn(),
                     txContext.getUserId(),
                     List.of(new InventoryReserveItem(txContext.getProductId(), txContext.getCount())),
@@ -173,7 +173,7 @@ public class SeckillOrderTransactionListener implements RocketMQLocalTransaction
             orderItem.setProductQuantity(txContext.getCount());
             orderItem.setRealAmount(totalAmount);
             orderItemMapper.insert(orderItem);
-            mqLocalMessageService.save(orderTimeoutLocalMessageSupport.build(order.getId(), order.getCreateTime()));
+            mqLocalMessageService.save(orderTimeoutOutboxAssembler.build(order.getId(), order.getCreateTime()));
             log.info("秒杀本地事务下单成功: orderSn={}", txContext.getOrderSn());
             return RocketMQLocalTransactionState.COMMIT;
         } catch (Exception e) {

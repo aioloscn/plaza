@@ -1,8 +1,8 @@
 package com.aiolos.plaza.order.job;
 
-import com.aiolos.plaza.order.application.payment.PaymentCompensationTaskService;
-import com.aiolos.plaza.order.coreflow.inventory.service.OrderInventoryService;
-import com.aiolos.plaza.order.api.PlazaOrderService;
+import com.aiolos.plaza.order.application.payment.compensation.PaymentCompensationTaskScheduler;
+import com.aiolos.plaza.order.application.stock.reservation.StockReservationService;
+import com.aiolos.plaza.order.application.order.OrderService;
 import com.xxl.job.core.handler.annotation.XxlJob;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,13 +16,13 @@ import org.springframework.stereotype.Component;
 public class OrderJob {
 
     @Autowired
-    private PlazaOrderService plazaOrderService;
+    private OrderService orderService;
 
     @Autowired
-    private OrderInventoryService orderInventoryService;
+    private StockReservationService stockReservationService;
 
     @Autowired
-    private PaymentCompensationTaskService paymentCompensationTaskService;
+    private PaymentCompensationTaskScheduler paymentCompensationTaskScheduler;
 
     /**
      * 订单超时自动取消任务（T+1兜底或定时扫描）
@@ -33,8 +33,8 @@ public class OrderJob {
         log.info("开始执行订单超时自动取消兜底任务");
         long start = System.currentTimeMillis();
         try {
-            plazaOrderService.cancelTimeoutOrders();
-            orderInventoryService.expireReservations(200);
+            orderService.cancelTimeoutOrders();
+            stockReservationService.expireReservations(200);
             log.info("订单超时自动取消兜底任务执行完成，耗时: {}ms", System.currentTimeMillis() - start);
         } catch (Exception e) {
             log.error("订单超时自动取消兜底任务执行异常", e);
@@ -51,8 +51,8 @@ public class OrderJob {
         long start = System.currentTimeMillis();
         log.info("开始执行父子订单状态对账任务");
         try {
-            plazaOrderService.reconcileParentOrderStatus(500);
-            paymentCompensationTaskService.enqueueReconcileTasks(200);
+            orderService.reconcileParentOrderStatus(500);
+            paymentCompensationTaskScheduler.enqueueReconcileTasks(200);
             log.info("父子订单状态对账任务执行完成，耗时: {}ms", System.currentTimeMillis() - start);
         } catch (Exception e) {
             log.error("父子订单状态对账任务执行异常", e);
@@ -69,7 +69,7 @@ public class OrderJob {
         long start = System.currentTimeMillis();
         log.info("开始执行支付补偿任务");
         try {
-            paymentCompensationTaskService.processReadyTasks();
+            paymentCompensationTaskScheduler.processReadyTasks();
             log.info("支付补偿任务执行完成，耗时: {}ms", System.currentTimeMillis() - start);
         } catch (Exception e) {
             log.error("支付补偿任务执行异常", e);

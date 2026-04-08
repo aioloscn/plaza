@@ -1,7 +1,7 @@
 package com.aiolos.plaza.order.mq.consumer;
 
 import com.aiolos.plaza.mq.message.OrderReserveMessage;
-import com.aiolos.plaza.order.application.order.ReserveOrchestrator;
+import com.aiolos.plaza.order.application.order.submit.OrderReserveOrchestrator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
@@ -17,7 +17,7 @@ import java.util.function.Consumer;
 public class OrderReserveConsumer {
 
     @Autowired
-    private ReserveOrchestrator reserveOrchestrator;
+    private OrderReserveOrchestrator orderReserveOrchestrator;
 
     @Bean
     public Consumer<OrderReserveMessage> orderReserve() {
@@ -26,7 +26,7 @@ public class OrderReserveConsumer {
                 return;
             }
             log.info("收到普通单异步库存预占消息，orderId={}", message.orderId());
-            reserveOrchestrator.handleAsyncReserve(message.orderId());
+            orderReserveOrchestrator.handleAsyncReserve(message.orderId());
         };
     }
 }

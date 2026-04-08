@@ -5,7 +5,7 @@ import com.aiolos.common.enums.error.ErrorEnum;
 import com.aiolos.common.exception.util.ExceptionUtil;
 import com.aiolos.common.model.ContextInfo;
 import com.aiolos.plaza.enums.PayType;
-import com.aiolos.plaza.order.api.PaymentService;
+import com.aiolos.plaza.order.application.payment.PaymentService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;

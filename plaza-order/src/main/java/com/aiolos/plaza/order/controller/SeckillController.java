@@ -5,7 +5,7 @@ import com.aiolos.common.exception.util.ExceptionUtil;
 import com.aiolos.common.model.ContextInfo;
 import com.aiolos.plaza.enums.exceptions.SeckillExceptionEnum;
 import com.aiolos.plaza.order.model.bo.SeckillSubmitReq;
-import com.aiolos.plaza.order.api.PlazaSeckillService;
+import com.aiolos.plaza.order.application.seckill.SeckillService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.annotation.Resource;
@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.*;
 public class SeckillController {
 
     @Resource
-    private PlazaSeckillService seckillService;
+    private SeckillService seckillService;
 
     @Operation(summary = "提交秒杀请求", description = "网关限流后到达此接口，进行Lua库存扣减并发送MQ异步下单")
     @PostMapping("/submit")

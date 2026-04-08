@@ -6,7 +6,7 @@ import com.aiolos.plaza.enums.OrderState;
 import com.aiolos.plaza.enums.exceptions.OrderExceptionEnum;
 import com.aiolos.plaza.mapper.OrderMapper;
 import com.aiolos.plaza.model.po.Order;
-import com.aiolos.plaza.order.coreflow.inventory.service.OrderInventoryService;
+import com.aiolos.plaza.order.application.stock.reservation.StockReservationService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.statemachine.StateContext;
@@ -21,7 +21,7 @@ public class OrderStockConfirmAction implements Action<OrderState, OrderEvent> {
     private OrderMapper orderMapper;
 
     @Resource
-    private OrderInventoryService orderInventoryService;
+    private StockReservationService stockReservationService;
 
     @Override
     public void execute(StateContext<OrderState, OrderEvent> context) {
@@ -37,7 +37,7 @@ public class OrderStockConfirmAction implements Action<OrderState, OrderEvent> {
             return;
         }
         try {
-            orderInventoryService.confirm(order.getReservationNo());
+            stockReservationService.confirm(order.getReservationNo());
         } catch (Exception ex) {
             log.error("确认库存预占失败，orderId: {}, reservationNo: {}", orderId, order.getReservationNo(), ex);
             ExceptionUtil.throwException(OrderExceptionEnum.ORDER_STATUS_ERROR);
