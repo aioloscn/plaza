@@ -39,6 +39,18 @@ public class ProductStockLog implements Serializable {
     private String orderSn;
 
     /**
+     * 库存池范围：1-普通库存池，2-秒杀库存池
+     */
+    @TableField("stock_scope")
+    private Integer stockScope;
+
+    /**
+     * 秒杀活动ID（普通库存池为空）
+     */
+    @TableField("activity_id")
+    private Long activityId;
+
+    /**
      * 变动数量（正数为增加，负数为扣减）
      */
     @TableField("amount")

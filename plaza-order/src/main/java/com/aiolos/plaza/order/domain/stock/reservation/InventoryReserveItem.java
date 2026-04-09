@@ -9,5 +9,6 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class InventoryReserveItem {
     private Long productId;
+    private Long activityId;
     private Integer quantity;
 }

@@ -48,6 +48,9 @@ public class PaymentCompensationTaskScheduler {
     private final AlipayGatewaySupport alipayGatewaySupport;
     private final RefundCompensationOrchestrator refundCompensationOrchestrator;
 
+    /**
+     * 构造补偿任务调度器，注入支付查询、退款补偿和任务持久化依赖。
+     */
     public PaymentCompensationTaskScheduler(PaymentCompensationTaskMapper paymentCompensationTaskMapper,
                                             ParentOrderMapper parentOrderMapper,
                                             PaymentCompensationTaskFactory paymentCompensationTaskFactory,
@@ -66,6 +69,9 @@ public class PaymentCompensationTaskScheduler {
         this.refundCompensationOrchestrator = refundCompensationOrchestrator;
     }
 
+    /**
+     * 扫描并执行到期的补偿任务（待执行、待重试和超时 processing 任务）。
+     */
     public void processReadyTasks() {
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime claimDeadline = now.minusSeconds(CLAIM_TIMEOUT_SECONDS);
@@ -86,6 +92,7 @@ public class PaymentCompensationTaskScheduler {
                         .last("LIMIT " + BATCH_SIZE)
         );
         for (PaymentCompensationTask task : tasks) {
+            // 抢占失败说明被其它线程/实例先处理，当前轮次直接跳过，避免重复执行同一任务。
             if (claimTask(task, claimDeadline) == 0) {
                 continue;
             }
@@ -93,6 +100,9 @@ public class PaymentCompensationTaskScheduler {
         }
     }
 
+    /**
+     * 扫描长时间未收敛的父单并补齐查单任务，同时补齐退款链路任务。
+     */
     public void enqueueReconcileTasks(int limit) {
         LocalDateTime paymentThreshold = LocalDateTime.now().minusMinutes(5);
         // 长时间停在支付前后中间态的父单，不再被动等回调，而是主动补一条查单任务兜底
@@ -125,10 +135,16 @@ public class PaymentCompensationTaskScheduler {
         refundCompensationOrchestrator.enqueueRefundTasks(limit);
     }
 
+    /**
+     * 处理第三方退款回调并转交退款补偿编排器。
+     */
     public String handleRefundNotify(Map<String, String> params) {
         return refundCompensationOrchestrator.handleRefundNotify(params);
     }
 
+    /**
+     * 按任务ID尝试抢占并立即执行，常用于手动触发或链路内即时驱动。
+     */
     public void executeTaskIfReady(Long taskId) {
         if (taskId == null) {
             return;
@@ -143,6 +159,9 @@ public class PaymentCompensationTaskScheduler {
         }
     }
 
+    /**
+     * 按退款请求号查找最新可执行退款任务并触发执行。
+     */
     public void executeRefundTaskIfReady(String refundRequestNo) {
         if (!StringUtils.hasText(refundRequestNo)) {
             return;
@@ -163,6 +182,9 @@ public class PaymentCompensationTaskScheduler {
         executeTaskIfReady(task.getId());
     }
 
+    /**
+     * 通过 CAS 抢占任务执行权，避免并发重复执行。
+     */
     private int claimTask(PaymentCompensationTask task, LocalDateTime claimDeadline) {
         // 抢占更新是并发执行的核心保护，只有把任务切到 processing 的线程才能继续往下跑
         return paymentCompensationTaskMapper.update(null, new LambdaUpdateWrapper<PaymentCompensationTask>()
@@ -177,6 +199,9 @@ public class PaymentCompensationTaskScheduler {
                         .le(PaymentCompensationTask::getUpdateTime, claimDeadline)));
     }
 
+    /**
+     * 按补偿类型分发到具体执行逻辑，并统一处理异常重试。
+     */
     private void executeClaimedTask(PaymentCompensationTask task) {
         try {
             PaymentCompensationType type = toTaskType(task.getCompensationType());
@@ -192,6 +217,9 @@ public class PaymentCompensationTaskScheduler {
         }
     }
 
+    /**
+     * 执行支付查询补偿：查三方状态并驱动本地支付编排收敛。
+     */
     private void executePaymentQueryTask(PaymentCompensationTask task) throws Exception {
         ParentOrder parentOrder = loadParentOrder(task.getParentOrderSn());
         if (parentOrder == null) {
@@ -233,6 +261,9 @@ public class PaymentCompensationTaskScheduler {
         retryOrManual(task, queryResult.message(), PaymentCompensationReasonCode.PAYMENT_CALLBACK_TIMEOUT);
     }
 
+    /**
+     * 失败后按退避策略重试；超过阈值转人工介入。
+     */
     private void retryOrManual(PaymentCompensationTask task, String failReason, PaymentCompensationReasonCode reasonCode) {
         int nextRetryCount = (task.getRetryCount() == null ? 0 : task.getRetryCount()) + 1;
         Integer maxRetryCount = task.getMaxRetryCount();
@@ -252,6 +283,9 @@ public class PaymentCompensationTaskScheduler {
                 .eq(PaymentCompensationTask::getStatus, PaymentCompensationTaskStatus.PROCESSING.getCode()));
     }
 
+    /**
+     * 把任务标记为人工处理待办，停止自动补偿。
+     */
     private void manualTask(PaymentCompensationTask task, String failReason) {
         // 支付查单补偿转人工时，只收敛任务自身状态，后续由人工介入排查支付状态冲突。
         paymentCompensationTaskMapper.update(null, new LambdaUpdateWrapper<PaymentCompensationTask>()
@@ -263,6 +297,9 @@ public class PaymentCompensationTaskScheduler {
                 .eq(PaymentCompensationTask::getStatus, PaymentCompensationTaskStatus.PROCESSING.getCode()));
     }
 
+    /**
+     * 任务执行成功后标记完成并记录三方状态。
+     */
     private void markTaskSuccess(PaymentCompensationTask task, String thirdPartyStatus, String message) {
         paymentCompensationTaskMapper.update(null, new LambdaUpdateWrapper<PaymentCompensationTask>()
                 .set(PaymentCompensationTask::getStatus, PaymentCompensationTaskStatus.SUCCESS.getCode())
@@ -273,6 +310,9 @@ public class PaymentCompensationTaskScheduler {
                 .eq(PaymentCompensationTask::getStatus, PaymentCompensationTaskStatus.PROCESSING.getCode()));
     }
 
+    /**
+     * 关闭无需继续补偿的任务。
+     */
     private void closeTask(PaymentCompensationTask task, String message) {
         paymentCompensationTaskMapper.update(null, new LambdaUpdateWrapper<PaymentCompensationTask>()
                 .set(PaymentCompensationTask::getStatus, PaymentCompensationTaskStatus.CLOSED.getCode())
@@ -282,6 +322,9 @@ public class PaymentCompensationTaskScheduler {
                 .eq(PaymentCompensationTask::getStatus, PaymentCompensationTaskStatus.PROCESSING.getCode()));
     }
 
+    /**
+     * 以 businessKey 幂等插入或更新补偿任务。
+     */
     private void upsertTask(PaymentCompensationType type,
                             String businessKey,
                             String parentOrderSn,
@@ -313,6 +356,9 @@ public class PaymentCompensationTaskScheduler {
         paymentCompensationTaskMapper.insert(task);
     }
 
+    /**
+     * 按父订单号加载父单快照。
+     */
     private ParentOrder loadParentOrder(String parentOrderSn) {
         if (!StringUtils.hasText(parentOrderSn)) {
             return null;
@@ -322,6 +368,9 @@ public class PaymentCompensationTaskScheduler {
                 .last("LIMIT 1"));
     }
 
+    /**
+     * 把任务类型编码转换为枚举定义。
+     */
     private PaymentCompensationType toTaskType(Integer code) {
         for (PaymentCompensationType value : PaymentCompensationType.values()) {
             if (value.getCode().equals(code)) {
@@ -331,16 +380,25 @@ public class PaymentCompensationTaskScheduler {
         throw new IllegalArgumentException("未知补偿任务类型: " + code);
     }
 
+    /**
+     * 根据重试次数计算退避间隔（分钟）。
+     */
     private long resolveBackoffMinutes(int retryCount) {
         // 退避时间统一集中管理，避免不同补偿链路各自定义一套重试节奏。
         int index = Math.max(0, Math.min(retryCount - 1, RETRY_BACKOFF_MINUTES.length - 1));
         return RETRY_BACKOFF_MINUTES[index];
     }
 
+    /**
+     * 生成支付查询任务的业务幂等键。
+     */
     private String buildPaymentQueryBusinessKey(String parentOrderSn) {
         return "payment-query:" + parentOrderSn;
     }
 
+    /**
+     * 截断长错误信息，避免超过数据库字段长度。
+     */
     private String truncate(String message) {
         if (!StringUtils.hasText(message)) {
             return null;

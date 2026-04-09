@@ -3,6 +3,7 @@ package com.aiolos.plaza.order.mq.producer;
 import com.aiolos.plaza.enums.RedisKeyEnum;
 import com.aiolos.plaza.enums.PayType;
 import com.aiolos.plaza.enums.OrderState;
+import com.aiolos.plaza.enums.StockScope;
 import com.aiolos.plaza.enums.OrderType;
 import com.aiolos.plaza.mapper.OrderItemMapper;
 import com.aiolos.plaza.mapper.OrderMapper;
@@ -125,7 +126,9 @@ public class SeckillOrderTransactionListener implements RocketMQLocalTransaction
             String reservationNo = stockReservationService.reserve(
                     txContext.getOrderSn(),
                     txContext.getUserId(),
-                    List.of(new InventoryReserveItem(txContext.getProductId(), txContext.getCount())),
+                    StockScope.SECKILL,
+                    txContext.getActivityId(),
+                    List.of(new InventoryReserveItem(txContext.getProductId(), txContext.getActivityId(), txContext.getCount())),
                     now.plusMinutes(10)
             );
             Order order = new Order();

@@ -2,6 +2,7 @@ package com.aiolos.plaza.order.application.order.submit;
 
 import com.aiolos.plaza.enums.OrderEvent;
 import com.aiolos.plaza.enums.OrderState;
+import com.aiolos.plaza.enums.StockScope;
 import com.aiolos.plaza.enums.exceptions.OrderExceptionEnum;
 import com.aiolos.plaza.mapper.OrderItemMapper;
 import com.aiolos.plaza.mapper.OrderMapper;
@@ -75,11 +76,11 @@ public class OrderReserveOrchestrator {
                 .collect(Collectors.groupingBy(OrderItem::getProductId, Collectors.summingInt(OrderItem::getProductQuantity)))
                 .entrySet()
                 .stream()
-                .map(entry -> new InventoryReserveItem(entry.getKey(), entry.getValue()))
+                .map(entry -> new InventoryReserveItem(entry.getKey(), null, entry.getValue()))
                 .collect(Collectors.toList());
         try {
             LocalDateTime expireTime = order.getCreateTime() != null ? order.getCreateTime().plusMinutes(10) : LocalDateTime.now().plusMinutes(10);
-            String reservationNo = stockReservationService.reserve(order.getOrderSn(), order.getUserId(), reserveItems, expireTime);
+            String reservationNo = stockReservationService.reserve(order.getOrderSn(), order.getUserId(), StockScope.NORMAL, null, reserveItems, expireTime);
             boolean accepted = orderStateMachineService.sendOrderEventWithDbState(order, OrderEvent.RESERVE_SUCCESS, null, reservationNo, OrderExceptionEnum.ORDER_STATUS_ERROR);
             if (accepted) {
                 parentOrderRefreshAppService.refresh(order.getParentOrderSn());

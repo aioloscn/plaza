@@ -2,16 +2,18 @@ package com.aiolos.plaza.order.application.stock.reservation;
 
 import com.aiolos.common.exception.util.ExceptionUtil;
 import com.aiolos.plaza.enums.StockLogType;
+import com.aiolos.plaza.enums.StockScope;
 import com.aiolos.plaza.enums.StockReservationEvent;
 import com.aiolos.plaza.enums.StockReservationState;
 import com.aiolos.plaza.enums.exceptions.OrderExceptionEnum;
-import com.aiolos.plaza.mapper.ProductMapper;
 import com.aiolos.plaza.mapper.ProductStockAggregateMapper;
 import com.aiolos.plaza.mapper.ProductStockLogMapper;
+import com.aiolos.plaza.mapper.SeckillStockAggregateMapper;
 import com.aiolos.plaza.mapper.StockReservationItemMapper;
 import com.aiolos.plaza.mapper.StockReservationMapper;
 import com.aiolos.plaza.model.po.ProductStockAggregate;
 import com.aiolos.plaza.model.po.ProductStockLog;
+import com.aiolos.plaza.model.po.SeckillStockAggregate;
 import com.aiolos.plaza.model.po.StockReservation;
 import com.aiolos.plaza.model.po.StockReservationItem;
 import com.aiolos.plaza.order.domain.stock.reservation.InventoryReserveItem;
@@ -41,10 +43,10 @@ import java.util.Map;
 public class StockReservationServiceImpl implements StockReservationService {
 
     @Resource
-    private ProductMapper productMapper;
+    private ProductStockAggregateMapper productStockAggregateMapper;
 
     @Resource
-    private ProductStockAggregateMapper productStockAggregateMapper;
+    private SeckillStockAggregateMapper seckillStockAggregateMapper;
 
     @Resource
     private ProductStockLogMapper productStockLogMapper;
@@ -63,7 +65,11 @@ public class StockReservationServiceImpl implements StockReservationService {
 
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
-    public String reserve(String orderSn, Long userId, List<InventoryReserveItem> items, LocalDateTime expireTime) {
+    public String reserve(String orderSn, Long userId, StockScope stockScope, Long activityId, List<InventoryReserveItem> items, LocalDateTime expireTime) {
+        StockScope actualScope = stockScope == null ? StockScope.NORMAL : stockScope;
+        if (actualScope == StockScope.SECKILL && activityId == null) {
+            ExceptionUtil.throwException(OrderExceptionEnum.ORDER_STATUS_ERROR);
+        }
         String reservationNo = buildReservationNo(orderSn);
         // 幂等兜底：同一个订单号对应同一个 reservationNo，已冻结或已确认时直接返回
         StockReservation exists = stockReservationMapper.selectOne(new LambdaQueryWrapper<StockReservation>()
@@ -76,41 +82,20 @@ public class StockReservationServiceImpl implements StockReservationService {
             ExceptionUtil.throwException(OrderExceptionEnum.ORDER_STATUS_ERROR);
         }
 
-        Map<Long, Integer> mergedItems = mergeItems(items);
+        Map<String, MergedReserveItem> mergedItems = mergeItems(items, actualScope, activityId);
         LocalDateTime now = LocalDateTime.now();
-        Map<Long, InventoryProductSnapshot> productSnapshotMap = productSnapshotReader.loadSnapshots(new ArrayList<>(mergedItems.keySet()));
-        for (Map.Entry<Long, Integer> entry : mergedItems.entrySet()) {
-            Long productId = entry.getKey();
-            Integer quantity = entry.getValue();
-            InventoryProductSnapshot product = productSnapshotMap.get(productId);
-            if (product == null || product.getStatus() == null || product.getStatus() != 1) {
-                ExceptionUtil.throwException(OrderExceptionEnum.PRODUCT_NOT_EXIST);
-            }
-            // 初始化聚合库存（幂等初始化）
-            productStockAggregateMapper.initAggregate(productId, product.getStock(), now);
-            // 先扣可用再加冻结，where 条件要求 `available >= quantity`，避免超卖
-            int aggregateUpdated = productStockAggregateMapper.update(null, new LambdaUpdateWrapper<ProductStockAggregate>()
-                    .eq(ProductStockAggregate::getProductId, productId)
-                    .ge(ProductStockAggregate::getAvailableStock, quantity)
-                    .setSql("available_stock = available_stock - " + quantity)
-                    .setSql("frozen_stock = frozen_stock + " + quantity)
-                    .setSql("version = version + 1")
-                    .set(ProductStockAggregate::getUpdateTime, now));
-            if (aggregateUpdated <= 0) {
-                ExceptionUtil.throwException(OrderExceptionEnum.STOCK_NOT_ENOUGH);
-            }
-            // 再扣商品主库库存，和聚合库存保持同事务一致
-            int productUpdated = productMapper.deductStock(productId, quantity);
-            if (productUpdated <= 0) {
-                ExceptionUtil.throwException(OrderExceptionEnum.STOCK_NOT_ENOUGH);
-            }
-            saveStockLog(productId, orderSn, -quantity, StockLogType.RESERVE_FREEZE, now);
+        initNormalAggregateIfNeeded(actualScope, mergedItems, now);
+        for (MergedReserveItem entry : mergedItems.values()) {
+            freezeFromAvailable(actualScope, entry, now);
+            saveStockLog(entry.productId, entry.activityId, actualScope, orderSn, -entry.quantity, StockLogType.RESERVE_FREEZE, now);
         }
 
         StockReservation reservation = new StockReservation();
         reservation.setReservationNo(reservationNo);
         reservation.setOrderSn(orderSn);
         reservation.setUserId(userId);
+        reservation.setStockScope(actualScope.getCode());
+        reservation.setActivityId(activityId);
         reservation.setStatus(StockReservationState.FROZEN.getCode());
         reservation.setExpireTime(expireTime);
         reservation.setCreateTime(now);
@@ -118,12 +103,14 @@ public class StockReservationServiceImpl implements StockReservationService {
         stockReservationMapper.insert(reservation);
 
         List<StockReservationItem> reservationItems = new ArrayList<>();
-        for (Map.Entry<Long, Integer> entry : mergedItems.entrySet()) {
+        for (MergedReserveItem entry : mergedItems.values()) {
             StockReservationItem item = new StockReservationItem();
             item.setReservationNo(reservationNo);
             item.setOrderSn(orderSn);
-            item.setProductId(entry.getKey());
-            item.setQuantity(entry.getValue());
+            item.setStockScope(actualScope.getCode());
+            item.setActivityId(entry.activityId);
+            item.setProductId(entry.productId);
+            item.setQuantity(entry.quantity);
             item.setCreateTime(now);
             item.setUpdateTime(now);
             reservationItems.add(item);
@@ -164,20 +151,12 @@ public class StockReservationServiceImpl implements StockReservationService {
 
         List<StockReservationItem> items = stockReservationItemMapper.selectList(new LambdaQueryWrapper<StockReservationItem>()
                 .eq(StockReservationItem::getReservationNo, reservationNo));
+        StockScope stockScope = StockScope.fromCode(reservation.getStockScope());
         LocalDateTime now = LocalDateTime.now();
         for (StockReservationItem item : items) {
             // 确认支付后：冻结库存转确认库存，不再回到可用库存
-            int rows = productStockAggregateMapper.update(null, new LambdaUpdateWrapper<ProductStockAggregate>()
-                    .eq(ProductStockAggregate::getProductId, item.getProductId())
-                    .ge(ProductStockAggregate::getFrozenStock, item.getQuantity())
-                    .setSql("frozen_stock = frozen_stock - " + item.getQuantity())
-                    .setSql("confirmed_stock = confirmed_stock + " + item.getQuantity())
-                    .setSql("version = version + 1")
-                    .set(ProductStockAggregate::getUpdateTime, now));
-            if (rows <= 0) {
-                ExceptionUtil.throwException(OrderExceptionEnum.ORDER_STOCK_RELEASE_FAIL);
-            }
-            saveStockLog(item.getProductId(), reservation.getOrderSn(), 0, StockLogType.PAY_CONFIRM, now);
+            confirmFrozen(stockScope, item, now);
+            saveStockLog(item.getProductId(), item.getActivityId(), stockScope, reservation.getOrderSn(), 0, StockLogType.PAY_CONFIRM, now);
         }
     }
 
@@ -198,13 +177,13 @@ public class StockReservationServiceImpl implements StockReservationService {
         if (!stockReservationTransitionRule.canTransit(state, StockReservationEvent.RELEASE)) {
             ExceptionUtil.throwException(OrderExceptionEnum.ORDER_STATUS_ERROR);
         }
-        releaseTo(reservationNo, state, StockReservationState.RELEASED);
+        releaseTo(reservation, state, StockReservationState.RELEASED);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void rollbackConfirmed(String reservationNo) {
-        // 退款成功场景：把 confirmed 库存回补到 available 并恢复商品主库
+        // 退款成功场景：把 confirmed 库存回补到 available
         StockReservation reservation = getByReservationNo(reservationNo);
         StockReservationState state = StockReservationState.fromCode(reservation.getStatus());
         // 幂等：已释放或已过期说明库存已回补完成，无需重复处理
@@ -233,21 +212,11 @@ public class StockReservationServiceImpl implements StockReservationService {
 
         List<StockReservationItem> items = stockReservationItemMapper.selectList(new LambdaQueryWrapper<StockReservationItem>()
                 .eq(StockReservationItem::getReservationNo, reservationNo));
+        StockScope stockScope = StockScope.fromCode(reservation.getStockScope());
         LocalDateTime now = LocalDateTime.now();
         for (StockReservationItem item : items) {
-            // 退款成功后：已确认库存回补到可用库存，同时恢复商品主库库存
-            int rows = productStockAggregateMapper.update(null, new LambdaUpdateWrapper<ProductStockAggregate>()
-                    .eq(ProductStockAggregate::getProductId, item.getProductId())
-                    .ge(ProductStockAggregate::getConfirmedStock, item.getQuantity())
-                    .setSql("available_stock = available_stock + " + item.getQuantity())
-                    .setSql("confirmed_stock = confirmed_stock - " + item.getQuantity())
-                    .setSql("version = version + 1")
-                    .set(ProductStockAggregate::getUpdateTime, now));
-            if (rows <= 0) {
-                ExceptionUtil.throwException(OrderExceptionEnum.ORDER_STOCK_RELEASE_FAIL);
-            }
-            productMapper.addStock(item.getProductId(), item.getQuantity());
-            saveStockLog(item.getProductId(), reservation.getOrderSn(), item.getQuantity(), StockLogType.REFUND_ROLLBACK, now);
+            rollbackConfirmedToAvailable(stockScope, item, now);
+            saveStockLog(item.getProductId(), item.getActivityId(), stockScope, reservation.getOrderSn(), item.getQuantity(), StockLogType.REFUND_ROLLBACK, now);
         }
     }
 
@@ -291,7 +260,7 @@ public class StockReservationServiceImpl implements StockReservationService {
                 continue;
             }
             try {
-                releaseTo(reservation.getReservationNo(), state, StockReservationState.EXPIRED);
+                releaseTo(reservation, state, StockReservationState.EXPIRED);
             } catch (Exception ex) {
                 // 单条失败不影响后续任务，避免整批处理中断
                 log.error("处理过期预占失败，reservationNo: {}", reservation.getReservationNo(), ex);
@@ -299,7 +268,8 @@ public class StockReservationServiceImpl implements StockReservationService {
         }
     }
 
-    private void releaseTo(String reservationNo, StockReservationState fromState, StockReservationState toState) {
+    private void releaseTo(StockReservation reservation, StockReservationState fromState, StockReservationState toState) {
+        String reservationNo = reservation.getReservationNo();
         // release 和 expire 统一收敛到同一回补逻辑，避免两套分支逐步漂移
         // CAS 状态迁移：仅当数据库状态仍是 `fromState` 时，才允许迁移到目标状态
         int updated = stockReservationMapper.update(null, new LambdaUpdateWrapper<StockReservation>()
@@ -319,23 +289,13 @@ public class StockReservationServiceImpl implements StockReservationService {
 
         List<StockReservationItem> items = stockReservationItemMapper.selectList(new LambdaQueryWrapper<StockReservationItem>()
                 .eq(StockReservationItem::getReservationNo, reservationNo));
+        StockScope stockScope = StockScope.fromCode(reservation.getStockScope());
         LocalDateTime now = LocalDateTime.now();
         StockLogType stockLogType = toState == StockReservationState.EXPIRED ? StockLogType.RESERVE_EXPIRE : StockLogType.RESERVE_RELEASE;
-        String orderSn = getByReservationNo(reservationNo).getOrderSn();
         for (StockReservationItem item : items) {
             // 释放或过期时：冻结库存回补到可用库存
-            int aggregateRows = productStockAggregateMapper.update(null, new LambdaUpdateWrapper<ProductStockAggregate>()
-                    .eq(ProductStockAggregate::getProductId, item.getProductId())
-                    .ge(ProductStockAggregate::getFrozenStock, item.getQuantity())
-                    .setSql("available_stock = available_stock + " + item.getQuantity())
-                    .setSql("frozen_stock = frozen_stock - " + item.getQuantity())
-                    .setSql("version = version + 1")
-                    .set(ProductStockAggregate::getUpdateTime, now));
-            if (aggregateRows <= 0) {
-                ExceptionUtil.throwException(OrderExceptionEnum.ORDER_STOCK_RELEASE_FAIL);
-            }
-            productMapper.addStock(item.getProductId(), item.getQuantity());
-            saveStockLog(item.getProductId(), orderSn, item.getQuantity(), stockLogType, now);
+            releaseFrozenToAvailable(stockScope, item, now);
+            saveStockLog(item.getProductId(), item.getActivityId(), stockScope, reservation.getOrderSn(), item.getQuantity(), stockLogType, now);
         }
     }
 
@@ -348,13 +308,23 @@ public class StockReservationServiceImpl implements StockReservationService {
         return reservation;
     }
 
-    private Map<Long, Integer> mergeItems(List<InventoryReserveItem> items) {
-        Map<Long, Integer> result = new LinkedHashMap<>();
+    private Map<String, MergedReserveItem> mergeItems(List<InventoryReserveItem> items, StockScope stockScope, Long activityId) {
+        Map<String, MergedReserveItem> result = new LinkedHashMap<>();
         for (InventoryReserveItem item : items) {
             if (item == null || item.getProductId() == null || item.getQuantity() == null || item.getQuantity() <= 0) {
                 continue;
             }
-            result.merge(item.getProductId(), item.getQuantity(), Integer::sum);
+            Long actualActivityId = stockScope == StockScope.SECKILL ? (item.getActivityId() == null ? activityId : item.getActivityId()) : null;
+            if (stockScope == StockScope.SECKILL && actualActivityId == null) {
+                continue;
+            }
+            String key = stockScope == StockScope.SECKILL ? actualActivityId + ":" + item.getProductId() : String.valueOf(item.getProductId());
+            MergedReserveItem mergedItem = result.get(key);
+            if (mergedItem == null) {
+                result.put(key, new MergedReserveItem(item.getProductId(), actualActivityId, item.getQuantity()));
+            } else {
+                mergedItem.quantity = mergedItem.quantity + item.getQuantity();
+            }
         }
         if (result.isEmpty()) {
             ExceptionUtil.throwException(OrderExceptionEnum.ORDER_NOT_EXIST);
@@ -367,13 +337,146 @@ public class StockReservationServiceImpl implements StockReservationService {
         return "RSV-" + orderSn;
     }
 
-    private void saveStockLog(Long productId, String orderSn, Integer amount, StockLogType type, LocalDateTime now) {
+    private void initNormalAggregateIfNeeded(StockScope stockScope, Map<String, MergedReserveItem> mergedItems, LocalDateTime now) {
+        if (stockScope != StockScope.NORMAL) {
+            return;
+        }
+        List<Long> productIds = new ArrayList<>();
+        for (MergedReserveItem item : mergedItems.values()) {
+            productIds.add(item.productId);
+        }
+        Map<Long, InventoryProductSnapshot> productSnapshotMap = productSnapshotReader.loadSnapshots(productIds);
+        for (MergedReserveItem item : mergedItems.values()) {
+            InventoryProductSnapshot product = productSnapshotMap.get(item.productId);
+            if (product == null || product.getStatus() == null || product.getStatus() != 1) {
+                ExceptionUtil.throwException(OrderExceptionEnum.PRODUCT_NOT_EXIST);
+            }
+            productStockAggregateMapper.initAggregate(item.productId, product.getStock(), now);
+        }
+    }
+
+    private void freezeFromAvailable(StockScope stockScope, MergedReserveItem item, LocalDateTime now) {
+        int rows;
+        if (stockScope == StockScope.SECKILL) {
+            seckillStockAggregateMapper.initAggregate(item.activityId, item.productId, now);
+            rows = seckillStockAggregateMapper.update(null, new LambdaUpdateWrapper<SeckillStockAggregate>()
+                    .eq(SeckillStockAggregate::getActivityId, item.activityId)
+                    .eq(SeckillStockAggregate::getProductId, item.productId)
+                    .ge(SeckillStockAggregate::getAvailableStock, item.quantity)
+                    .setSql("available_stock = available_stock - " + item.quantity)
+                    .setSql("frozen_stock = frozen_stock + " + item.quantity)
+                    .setSql("version = version + 1")
+                    .set(SeckillStockAggregate::getUpdateTime, now));
+        } else {
+            rows = productStockAggregateMapper.update(null, new LambdaUpdateWrapper<ProductStockAggregate>()
+                    .eq(ProductStockAggregate::getProductId, item.productId)
+                    .ge(ProductStockAggregate::getAvailableStock, item.quantity)
+                    .setSql("available_stock = available_stock - " + item.quantity)
+                    .setSql("frozen_stock = frozen_stock + " + item.quantity)
+                    .setSql("version = version + 1")
+                    .set(ProductStockAggregate::getUpdateTime, now));
+        }
+        if (rows <= 0) {
+            ExceptionUtil.throwException(OrderExceptionEnum.STOCK_NOT_ENOUGH);
+        }
+    }
+
+    private void confirmFrozen(StockScope stockScope, StockReservationItem item, LocalDateTime now) {
+        int rows;
+        if (stockScope == StockScope.SECKILL) {
+            rows = seckillStockAggregateMapper.update(null, new LambdaUpdateWrapper<SeckillStockAggregate>()
+                    .eq(SeckillStockAggregate::getActivityId, item.getActivityId())
+                    .eq(SeckillStockAggregate::getProductId, item.getProductId())
+                    .ge(SeckillStockAggregate::getFrozenStock, item.getQuantity())
+                    .setSql("frozen_stock = frozen_stock - " + item.getQuantity())
+                    .setSql("confirmed_stock = confirmed_stock + " + item.getQuantity())
+                    .setSql("version = version + 1")
+                    .set(SeckillStockAggregate::getUpdateTime, now));
+        } else {
+            rows = productStockAggregateMapper.update(null, new LambdaUpdateWrapper<ProductStockAggregate>()
+                    .eq(ProductStockAggregate::getProductId, item.getProductId())
+                    .ge(ProductStockAggregate::getFrozenStock, item.getQuantity())
+                    .setSql("frozen_stock = frozen_stock - " + item.getQuantity())
+                    .setSql("confirmed_stock = confirmed_stock + " + item.getQuantity())
+                    .setSql("version = version + 1")
+                    .set(ProductStockAggregate::getUpdateTime, now));
+        }
+        if (rows <= 0) {
+            ExceptionUtil.throwException(OrderExceptionEnum.ORDER_STOCK_RELEASE_FAIL);
+        }
+    }
+
+    private void releaseFrozenToAvailable(StockScope stockScope, StockReservationItem item, LocalDateTime now) {
+        int rows;
+        if (stockScope == StockScope.SECKILL) {
+            rows = seckillStockAggregateMapper.update(null, new LambdaUpdateWrapper<SeckillStockAggregate>()
+                    .eq(SeckillStockAggregate::getActivityId, item.getActivityId())
+                    .eq(SeckillStockAggregate::getProductId, item.getProductId())
+                    .ge(SeckillStockAggregate::getFrozenStock, item.getQuantity())
+                    .setSql("available_stock = available_stock + " + item.getQuantity())
+                    .setSql("frozen_stock = frozen_stock - " + item.getQuantity())
+                    .setSql("version = version + 1")
+                    .set(SeckillStockAggregate::getUpdateTime, now));
+        } else {
+            rows = productStockAggregateMapper.update(null, new LambdaUpdateWrapper<ProductStockAggregate>()
+                    .eq(ProductStockAggregate::getProductId, item.getProductId())
+                    .ge(ProductStockAggregate::getFrozenStock, item.getQuantity())
+                    .setSql("available_stock = available_stock + " + item.getQuantity())
+                    .setSql("frozen_stock = frozen_stock - " + item.getQuantity())
+                    .setSql("version = version + 1")
+                    .set(ProductStockAggregate::getUpdateTime, now));
+        }
+        if (rows <= 0) {
+            ExceptionUtil.throwException(OrderExceptionEnum.ORDER_STOCK_RELEASE_FAIL);
+        }
+    }
+
+    private void rollbackConfirmedToAvailable(StockScope stockScope, StockReservationItem item, LocalDateTime now) {
+        int rows;
+        if (stockScope == StockScope.SECKILL) {
+            rows = seckillStockAggregateMapper.update(null, new LambdaUpdateWrapper<SeckillStockAggregate>()
+                    .eq(SeckillStockAggregate::getActivityId, item.getActivityId())
+                    .eq(SeckillStockAggregate::getProductId, item.getProductId())
+                    .ge(SeckillStockAggregate::getConfirmedStock, item.getQuantity())
+                    .setSql("available_stock = available_stock + " + item.getQuantity())
+                    .setSql("confirmed_stock = confirmed_stock - " + item.getQuantity())
+                    .setSql("version = version + 1")
+                    .set(SeckillStockAggregate::getUpdateTime, now));
+        } else {
+            rows = productStockAggregateMapper.update(null, new LambdaUpdateWrapper<ProductStockAggregate>()
+                    .eq(ProductStockAggregate::getProductId, item.getProductId())
+                    .ge(ProductStockAggregate::getConfirmedStock, item.getQuantity())
+                    .setSql("available_stock = available_stock + " + item.getQuantity())
+                    .setSql("confirmed_stock = confirmed_stock - " + item.getQuantity())
+                    .setSql("version = version + 1")
+                    .set(ProductStockAggregate::getUpdateTime, now));
+        }
+        if (rows <= 0) {
+            ExceptionUtil.throwException(OrderExceptionEnum.ORDER_STOCK_RELEASE_FAIL);
+        }
+    }
+
+    private void saveStockLog(Long productId, Long activityId, StockScope stockScope, String orderSn, Integer amount, StockLogType type, LocalDateTime now) {
         ProductStockLog stockLog = new ProductStockLog();
         stockLog.setProductId(productId);
+        stockLog.setActivityId(activityId);
+        stockLog.setStockScope(stockScope.getCode());
         stockLog.setOrderSn(orderSn);
         stockLog.setAmount(amount);
         stockLog.setType(type.getCode());
         stockLog.setCreateTime(now);
         productStockLogMapper.insert(stockLog);
+    }
+
+    private static class MergedReserveItem {
+        private final Long productId;
+        private final Long activityId;
+        private Integer quantity;
+
+        private MergedReserveItem(Long productId, Long activityId, Integer quantity) {
+            this.productId = productId;
+            this.activityId = activityId;
+            this.quantity = quantity;
+        }
     }
 }

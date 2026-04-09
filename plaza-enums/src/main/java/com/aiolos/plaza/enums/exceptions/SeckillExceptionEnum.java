@@ -16,6 +16,7 @@ public enum SeckillExceptionEnum implements CommonError {
     SECKILL_SOLD_OUT(2006, "手慢了，商品已被抢光"),
     SECKILL_DATA_ERROR(2007, "秒杀活动数据异常，请稍后重试"),
     SECKILL_FAIL(2008, "抢购失败，活动异常或库存不足"),
+    SECKILL_INSUFFICIENT_STOCK(2009, "库存不足"),
     ;
 
     private final Integer errCode;

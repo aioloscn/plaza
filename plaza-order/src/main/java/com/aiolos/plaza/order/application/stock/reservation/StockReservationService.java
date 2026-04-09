@@ -1,5 +1,6 @@
 package com.aiolos.plaza.order.application.stock.reservation;
 
+import com.aiolos.plaza.enums.StockScope;
 import com.aiolos.plaza.order.domain.stock.reservation.InventoryReserveItem;
 
 import java.time.LocalDateTime;
@@ -14,7 +15,7 @@ public interface StockReservationService {
     /**
      * 冻结库存并创建预占记录
      */
-    String reserve(String orderSn, Long userId, List<InventoryReserveItem> items, LocalDateTime expireTime);
+    String reserve(String orderSn, Long userId, StockScope stockScope, Long activityId, List<InventoryReserveItem> items, LocalDateTime expireTime);
 
     /**
      * 支付成功后确认预占

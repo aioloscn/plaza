@@ -4,6 +4,12 @@ import com.aiolos.common.exception.util.ExceptionUtil;
 import com.aiolos.plaza.bo.SeckillActivityAddReq;
 import com.aiolos.plaza.enums.RedisKeyEnum;
 import com.aiolos.plaza.enums.exceptions.SeckillExceptionEnum;
+import com.aiolos.plaza.mapper.ProductMapper;
+import com.aiolos.plaza.mapper.ProductStockAggregateMapper;
+import com.aiolos.plaza.mapper.SeckillStockAggregateMapper;
+import com.aiolos.plaza.model.po.Product;
+import com.aiolos.plaza.model.po.ProductStockAggregate;
+import com.aiolos.plaza.model.po.SeckillStockAggregate;
 import com.aiolos.plaza.model.po.SeckillActivity;
 import com.aiolos.plaza.service.SeckillActivityService;
 import com.aiolos.plaza.shop.model.vo.SeckillProductVO;
@@ -12,12 +18,14 @@ import com.aiolos.plaza.shop.service.ShopProductService;
 import com.aiolos.plaza.shop.service.ShopSeckillService;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -33,6 +41,9 @@ public class ShopSeckillServiceImpl implements ShopSeckillService {
     private final SeckillActivityService seckillActivityService;
     private final StringRedisTemplate redisTemplate;
     private final ShopProductService shopProductService;
+    private final ProductMapper productMapper;
+    private final ProductStockAggregateMapper productStockAggregateMapper;
+    private final SeckillStockAggregateMapper seckillStockAggregateMapper;
     
     @Override
     public Long addSeckillActivity(SeckillActivityAddReq req) {
@@ -51,10 +62,41 @@ public class ShopSeckillServiceImpl implements ShopSeckillService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void startSeckillActivity(Long activityId) {
         SeckillActivity activity = seckillActivityService.getById(activityId);
         if (activity == null) {
             ExceptionUtil.throwException(SeckillExceptionEnum.SECKILL_ACTIVITY_ERROR);
+        }
+        Product product = productMapper.selectById(activity.getProductId());
+        if (product == null) {
+            ExceptionUtil.throwException(SeckillExceptionEnum.SECKILL_DATA_ERROR);
+        }
+        if (activity.getStock() == null || activity.getStock() <= 0) {
+            ExceptionUtil.throwException(SeckillExceptionEnum.SECKILL_DATA_ERROR);
+        }
+        LocalDateTime now = LocalDateTime.now();
+        productStockAggregateMapper.initAggregate(activity.getProductId(), product.getStock(), now);
+        seckillStockAggregateMapper.initAggregate(activityId, activity.getProductId(), now);
+        int allocatedRows = seckillStockAggregateMapper.update(null, new LambdaUpdateWrapper<SeckillStockAggregate>()
+                .eq(SeckillStockAggregate::getActivityId, activityId)
+                .eq(SeckillStockAggregate::getProductId, activity.getProductId())
+                .eq(SeckillStockAggregate::getAvailableStock, 0)
+                .eq(SeckillStockAggregate::getFrozenStock, 0)
+                .eq(SeckillStockAggregate::getConfirmedStock, 0)
+                .setSql("available_stock = available_stock + " + activity.getStock())
+                .setSql("version = version + 1")
+                .set(SeckillStockAggregate::getUpdateTime, now));
+        if (allocatedRows > 0) {
+            int normalRows = productStockAggregateMapper.update(null, new LambdaUpdateWrapper<ProductStockAggregate>()
+                    .eq(ProductStockAggregate::getProductId, activity.getProductId())
+                    .ge(ProductStockAggregate::getAvailableStock, activity.getStock())
+                    .setSql("available_stock = available_stock - " + activity.getStock())
+                    .setSql("version = version + 1")
+                    .set(ProductStockAggregate::getUpdateTime, now));
+            if (normalRows <= 0) {
+                ExceptionUtil.throwException(SeckillExceptionEnum.SECKILL_INSUFFICIENT_STOCK);
+            }
         }
         
         // 更新状态为 1:进行中

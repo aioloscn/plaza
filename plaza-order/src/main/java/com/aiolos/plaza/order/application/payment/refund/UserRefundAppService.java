@@ -36,6 +36,9 @@ public class UserRefundAppService {
     private final RefundCompensationAppService refundCompensationAppService;
     private final PaymentCompensationTaskScheduler paymentCompensationTaskScheduler;
 
+    /**
+     * 构造用户退款申请服务，注入退款状态流转与补偿调度依赖。
+     */
     public UserRefundAppService(ParentOrderMapper parentOrderMapper,
                              OrderMapper orderMapper,
                              OrderStateJudge orderStateJudge,
@@ -54,6 +57,12 @@ public class UserRefundAppService {
         this.paymentCompensationTaskScheduler = paymentCompensationTaskScheduler;
     }
 
+    /**
+     * 用户主动发起退款：
+     * 1. 校验父子单退款资格；
+     * 2. 推进父子单进入退款中；
+     * 3. 生成并尝试立即执行退款补偿任务。
+     */
     public String apply(Long userId, String parentOrderSn) {
         if (!StringUtils.hasText(parentOrderSn)) {
             ExceptionUtil.throwException(OrderExceptionEnum.ORDER_NOT_EXIST);

@@ -10,22 +10,13 @@ import java.io.Serializable;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("stock_reservation_item")
-public class StockReservationItem implements Serializable {
+@TableName("seckill_stock_aggregate")
+public class SeckillStockAggregate implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
     @TableId(value = "id", type = IdType.AUTO)
     private Long id;
-
-    @TableField("reservation_no")
-    private String reservationNo;
-
-    @TableField("order_sn")
-    private String orderSn;
-
-    @TableField("stock_scope")
-    private Integer stockScope;
 
     @TableField("activity_id")
     private Long activityId;
@@ -33,8 +24,17 @@ public class StockReservationItem implements Serializable {
     @TableField("product_id")
     private Long productId;
 
-    @TableField("quantity")
-    private Integer quantity;
+    @TableField("available_stock")
+    private Integer availableStock;
+
+    @TableField("frozen_stock")
+    private Integer frozenStock;
+
+    @TableField("confirmed_stock")
+    private Integer confirmedStock;
+
+    @TableField("version")
+    private Integer version;
 
     @TableField("create_time")
     private LocalDateTime createTime;

@@ -27,6 +27,12 @@ public class StockReservation implements Serializable {
     @TableField("user_id")
     private Long userId;
 
+    @TableField("stock_scope")
+    private Integer stockScope;
+
+    @TableField("activity_id")
+    private Long activityId;
+
     @TableField("status")
     private Integer status;
 

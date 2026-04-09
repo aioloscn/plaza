@@ -103,12 +103,30 @@ CREATE TABLE `product_stock_aggregate` (
   UNIQUE KEY `uk_product_id` (`product_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COMMENT='库存聚合表';
 
+DROP TABLE IF EXISTS `seckill_stock_aggregate`;
+CREATE TABLE `seckill_stock_aggregate` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `activity_id` bigint(20) NOT NULL COMMENT '秒杀活动ID',
+  `product_id` bigint(20) NOT NULL COMMENT '商品ID',
+  `available_stock` int(11) NOT NULL DEFAULT '0',
+  `frozen_stock` int(11) NOT NULL DEFAULT '0',
+  `confirmed_stock` int(11) NOT NULL DEFAULT '0',
+  `version` int(11) NOT NULL DEFAULT '0',
+  `create_time` datetime DEFAULT NULL,
+  `update_time` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_activity_product` (`activity_id`,`product_id`),
+  KEY `idx_product_id` (`product_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COMMENT='秒杀库存聚合表';
+
 DROP TABLE IF EXISTS `stock_reservation`;
 CREATE TABLE `stock_reservation` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `reservation_no` varchar(64) NOT NULL,
   `order_sn` varchar(64) NOT NULL,
   `user_id` bigint(20) DEFAULT NULL,
+  `stock_scope` int(1) NOT NULL DEFAULT '1' COMMENT '库存池范围：1-普通库存池，2-秒杀库存池',
+  `activity_id` bigint(20) DEFAULT NULL COMMENT '秒杀活动ID（普通库存池为空）',
   `status` int(1) NOT NULL COMMENT '0-冻结中 1-已确认 2-已释放 3-已过期',
   `expire_time` datetime DEFAULT NULL,
   `create_time` datetime DEFAULT NULL,
@@ -124,6 +142,8 @@ CREATE TABLE `stock_reservation_item` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `reservation_no` varchar(64) NOT NULL,
   `order_sn` varchar(64) NOT NULL,
+  `stock_scope` int(1) NOT NULL DEFAULT '1' COMMENT '库存池范围：1-普通库存池，2-秒杀库存池',
+  `activity_id` bigint(20) DEFAULT NULL COMMENT '秒杀活动ID（普通库存池为空）',
   `product_id` bigint(20) NOT NULL,
   `quantity` int(11) NOT NULL,
   `create_time` datetime DEFAULT NULL,
