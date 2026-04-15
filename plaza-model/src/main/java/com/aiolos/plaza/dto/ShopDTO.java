@@ -14,6 +14,7 @@ public class ShopDTO {
     private String iconUrl;
     private String address;
     private String tags;
+    private String description;
     @Schema(description = "店铺位置经纬度")
     private String location;
     private BigDecimal latitude;

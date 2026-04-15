@@ -161,6 +161,7 @@ public class HomeShopServiceImpl implements HomeShopService, InitializingBean {
                 vo.setName(source.get("name").asText());
                 vo.setIconUrl(source.get("icon_url") != null ? source.get("icon_url").asText() : null);
                 vo.setAddress(source.get("address") != null ? source.get("address").asText() : null);
+                vo.setDescription(source.get("description") != null ? source.get("description").asText() : null);
                 vo.setCategoryId(source.get("category_id") != null ? source.get("category_id").asLong() : null);
                 vo.setCategoryName(source.get("category_name") != null ? source.get("category_name").asText() : null);
                 vo.setScore(source.get("score") != null ? source.get("score").decimalValue() : null);
@@ -169,6 +170,11 @@ public class HomeShopServiceImpl implements HomeShopService, InitializingBean {
                 vo.setSellerId(source.get("seller_id") != null ? source.get("seller_id").asLong() : null);
                 vo.setSellerScore(source.get("seller_score") != null ? source.get("seller_score").decimalValue() : null);
                 vo.setSellerDisabledFlag(source.get("seller_disabled_flag") != null ? source.get("seller_disabled_flag").asInt() : null);
+                
+                if (source.get("location") != null) {
+                    vo.setLongitude(source.get("location").get("lon") != null ? source.get("location").get("lon").decimalValue() : null);
+                    vo.setLatitude(source.get("location").get("lat") != null ? source.get("location").get("lat").decimalValue() : null);
+                }
                 
                 // 处理距离字段
                 if (fields != null && fields.get("distance") != null) {
@@ -306,6 +312,15 @@ public class HomeShopServiceImpl implements HomeShopService, InitializingBean {
                 categoryTerm.put("category_id", categoryValue);
                 categoryTermClause.put("term", categoryTerm);
                 shouldClauses.add(categoryTermClause);
+
+                Map<String, Object> descriptionMatchClause = new HashMap<>();
+                Map<String, Object> descriptionMatch = new HashMap<>();
+                Map<String, Object> descriptionQuery = new HashMap<>();
+                descriptionQuery.put("query", keyword);
+                descriptionQuery.put("boost", 1.0);
+                descriptionMatch.put("description", descriptionQuery);
+                descriptionMatchClause.put("match", descriptionMatch);
+                shouldClauses.add(descriptionMatchClause);
                 
                 Map<String, Object> functionFilter = new HashMap<>();
                 Map<String, Object> filterTerm = new HashMap<>();

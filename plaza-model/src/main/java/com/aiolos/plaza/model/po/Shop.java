@@ -90,6 +90,12 @@ public class Shop implements Serializable {
     private String tags;
 
     /**
+     * 店铺描述
+     */
+    @TableField("description")
+    private String description;
+
+    /**
      * 状态, 0: 禁用, 1: 启用
      */
     @TableField("status")
@@ -137,6 +143,8 @@ public class Shop implements Serializable {
     public static final String ADDRESS = "address";
 
     public static final String TAGS = "tags";
+
+    public static final String DESCRIPTION = "description";
 
     public static final String STATUS = "status";
 

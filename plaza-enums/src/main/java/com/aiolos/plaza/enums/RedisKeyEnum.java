@@ -27,11 +27,17 @@ public enum RedisKeyEnum {
     PRODUCT_STOCK("product:stock:%s", -1L),
 
     // ========== 分布式锁 ==========
+    /** Canal Leader 锁 (仅允许一个节点消费Canal) */
+    LOCK_CANAL_LEADER("lock:canal:leader", 30L),
+
     /** Canal 同步任务全局锁 (锁续期最大5分钟) */
     LOCK_CANAL_RUN("lock:canal:run", 300L),
     
     /** 店铺索引更新锁 (短锁10秒) */
     LOCK_SHOP_INDEX("lock:shop:index:%s", 10L),
+
+    /** 店铺ES全量同步任务锁 (锁续期最大30分钟) */
+    LOCK_SHOP_FULL_SYNC("lock:shop:full_sync", 1800L),
     
     /** 商品库存扣减锁 (用于Redisson锁商品) */
     LOCK_STOCK("lock:stock:%s", 10L),
@@ -55,6 +61,10 @@ public enum RedisKeyEnum {
     /** 单个用户秒杀防刷频控标记 (如10秒过期) */
     SECKILL_LIMIT("seckill:limit:%s", 10L),
 
+    /** 首页门店检索用户画像缓存 String (默认6小时) */
+    HOME_USER_PROFILE("home:user:profile:%s", 6 * 3600L),
+
+    /** 秒杀订单确认令牌缓存 String (默认10分钟) */
     ORDER_CONFIRM_TOKEN("order:confirm:token:%s:%s", 600L);
 
     private final String keyTemplate;

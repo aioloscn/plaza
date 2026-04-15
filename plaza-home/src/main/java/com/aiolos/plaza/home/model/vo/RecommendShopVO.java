@@ -29,6 +29,8 @@ public class RecommendShopVO {
     private String address;
 
     private String tags;
+
+    private String description;
     
     private Long sellerId;
     

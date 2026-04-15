@@ -18,7 +18,7 @@ import java.util.List;
  */
 public interface ShopMapper extends BaseMapper<Shop> {
 
-    @Select("select id, name, icon_url, address, category_id, score, per_capita_price, tags, longitude, latitude,\n" +
+    @Select("select id, name, icon_url, address, description, category_id, score, per_capita_price, tags, longitude, latitude,\n" +
             "       ceil(6378137 * 2 * ASIN(SQRT(POW(SIN(PI() * (#{latitude} - latitude) / 360), 2) + \n" +
             "       COS(PI() * #{latitude} / 180) * COS(latitude * PI() / 180) * \n" +
             "       POW(SIN(PI() * (#{longitude} - longitude) / 360), 2)))) as distance\n" +
@@ -27,13 +27,13 @@ public interface ShopMapper extends BaseMapper<Shop> {
     List<Shop> recommend(@Param("latitude") double latitude, @Param("longitude") double longitude);
 
     @Select("<script>" +
-            "select id, name, icon_url, address, category_id, score, per_capita_price, tags, longitude, latitude,\n" +
+            "select id, name, icon_url, address, description, category_id, score, per_capita_price, tags, longitude, latitude,\n" +
             "       ceil(6378137 * 2 * ASIN(SQRT(POW(SIN(PI() * (#{latitude} - latitude) / 360), 2) + \n" +
             "       COS(PI() * #{latitude} / 180) * COS(latitude * PI() / 180) * \n" +
             "       POW(SIN(PI() * (#{longitude} - longitude) / 360), 2)))) as distance\n" +
             "from shop where status = 1 " +
             "<if test='categoryId != null'> and category_id = #{categoryId} </if>" +
-            "and (name like concat('%', #{keyword}, '%') or tags like concat('%', #{keyword}, '%') or address like concat('%', #{keyword}, '%'))\n" +
+            "and (name like concat('%', #{keyword}, '%') or tags like concat('%', #{keyword}, '%') or address like concat('%', #{keyword}, '%') or description like concat('%', #{keyword}, '%'))\n" +
             "<choose>" +
             "<when test='orderBy != null and orderBy == 1'>order by (0.98 * 1 / log10(distance + 1) + 0.02 * score / 5) desc</when>" +
             "<otherwise>" +
@@ -49,7 +49,7 @@ public interface ShopMapper extends BaseMapper<Shop> {
     
     @Select("<script>" +
             "select \n" +
-            "  a.id, a.name, a.icon_url, a.address, a.tags, \n" +
+            "  a.id, a.name, a.icon_url, a.address, a.tags, a.description, \n" +
             "  concat(a.latitude,',',a.longitude) as location,\n" +
             "  a.latitude, a.longitude, a.score, a.per_capita_price, \n" +
             "  a.category_id, b.name as category_name,\n" +
@@ -65,4 +65,19 @@ public interface ShopMapper extends BaseMapper<Shop> {
             "</where>" +
             "</script>")
     List<ShopDTO> listShops(@Param("id") Long id, @Param("categoryId") Long categoryId, @Param("sellerId") Long sellerId);
+
+    @Select("select \n" +
+            "  a.id, a.name, a.icon_url, a.address, a.tags, a.description, \n" +
+            "  concat(a.latitude,',',a.longitude) as location,\n" +
+            "  a.latitude, a.longitude, a.score, a.per_capita_price, \n" +
+            "  a.category_id, b.name as category_name,\n" +
+            "  a.seller_id, c.score as seller_score, a.status, c.status as seller_disabled_flag,\n" +
+            "  a.create_time, a.update_time \n" +
+            "from shop a \n" +
+            "inner join category b on a.category_id = b.id \n" +
+            "inner join seller c on c.id = a.seller_id \n" +
+            "where a.id > #{lastId} \n" +
+            "order by a.id asc \n" +
+            "limit #{limit}")
+    List<ShopDTO> listShopsAfterId(@Param("lastId") Long lastId, @Param("limit") Integer limit);
 }

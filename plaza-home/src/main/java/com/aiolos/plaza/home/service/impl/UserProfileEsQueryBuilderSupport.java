@@ -1,0 +1,455 @@
+package com.aiolos.plaza.home.service.impl;
+
+import cn.hutool.core.collection.CollectionUtil;
+import com.aiolos.plaza.home.model.bo.UserProfileSearchShopBO;
+import com.aiolos.plaza.home.model.profile.UserShopProfile;
+import org.apache.commons.lang3.StringUtils;
+
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
+
+/**
+ * 用户画像 ES 查询构建支持类
+ * 负责把搜索请求和画像转为 ES DSL 结构
+ */
+public final class UserProfileEsQueryBuilderSupport {
+
+    private UserProfileEsQueryBuilderSupport() {
+    }
+
+    /**
+     * 构建 ES 查询结构
+     *
+     * @param req 搜索请求
+     * @param profile 用户画像
+     * @param current 页码
+     * @param size 每页条数
+     * @param scriptShopIdLimit 脚本可参与计算的店铺数量上限
+     * @return ES 查询结构
+     */
+    public static Map<String, Object> buildQuery(
+            UserProfileSearchShopBO req,
+            UserShopProfile profile,
+            long current,
+            long size,
+            int scriptShopIdLimit
+    ) {
+        return new UserProfileESQueryBuilder(scriptShopIdLimit)
+                .keyword(req.getKeyword())
+                .sellerEnabledFilter()
+                .categoryFilter(req.getCategoryId())
+                .tagFilter(req.getTag())
+                .distanceFunction(req.getLatitude(), req.getLongitude(), req.getOrderBy())
+                .shopQualityFunction()
+                .hotScoreFunction()
+                .profileFunctions(profile)
+                .distanceScriptField(req.getLatitude(), req.getLongitude())
+                .build(current, size);
+    }
+
+    /**
+     * ES 查询构建器
+     * function_score 负责主排序，script_score 负责热度和价格偏好补充
+     */
+    private static class UserProfileESQueryBuilder {
+
+        private final int scriptShopIdLimit;
+        private final Map<String, Object> root = new LinkedHashMap<>();
+        private final Map<String, Object> functionScore = new LinkedHashMap<>();
+        private final Map<String, Object> bool = new LinkedHashMap<>();
+        private final List<Map<String, Object>> must = new ArrayList<>();
+        private final List<Map<String, Object>> filters = new ArrayList<>();
+        private final List<Map<String, Object>> functions = new ArrayList<>();
+        private final Map<String, Object> scriptFields = new LinkedHashMap<>();
+
+        /**
+         * 初始化查询构建器
+         * 预置 function_score 基础结构
+         *
+         * @param scriptShopIdLimit 脚本可参与计算的店铺数量上限
+         */
+        UserProfileESQueryBuilder(int scriptShopIdLimit) {
+            this.scriptShopIdLimit = scriptShopIdLimit;
+            bool.put("must", must);
+            bool.put("filter", filters);
+
+            Map<String, Object> innerQuery = new LinkedHashMap<>();
+            innerQuery.put("bool", bool);
+            functionScore.put("query", innerQuery);
+            functionScore.put("functions", functions);
+            functionScore.put("score_mode", "sum");
+            functionScore.put("boost_mode", "sum");
+            functionScore.put("max_boost", 200);
+        }
+
+        /**
+         * 追加关键词召回条件
+         *
+         * @param keyword 搜索关键词
+         * @return 当前构建器
+         */
+        UserProfileESQueryBuilder keyword(String keyword) {
+            if (StringUtils.isBlank(keyword)) {
+                return this;
+            }
+            Map<String, Object> shouldClause = new LinkedHashMap<>();
+            List<Map<String, Object>> should = new ArrayList<>();
+            should.add(match("name.clean", keyword, 3.0));
+            should.add(match("name", keyword, 1.5));
+            should.add(match("tags", keyword, 1.0));
+            should.add(match("description", keyword, 1.0));
+            should.add(match("address", keyword, 0.6));
+            shouldClause.put("should", should);
+            shouldClause.put("minimum_should_match", 1);
+            Map<String, Object> boolClause = new LinkedHashMap<>();
+            boolClause.put("bool", shouldClause);
+            must.add(boolClause);
+            return this;
+        }
+
+        /**
+         * 追加商家可用过滤条件
+         *
+         * @return 当前构建器
+         */
+        UserProfileESQueryBuilder sellerEnabledFilter() {
+            filters.add(term("seller_disabled_flag", 1));
+            return this;
+        }
+
+        /**
+         * 追加类目过滤条件
+         *
+         * @param categoryId 类目 ID
+         * @return 当前构建器
+         */
+        UserProfileESQueryBuilder categoryFilter(Long categoryId) {
+            if (categoryId != null) {
+                filters.add(term("category_id", categoryId));
+            }
+            return this;
+        }
+
+        /**
+         * 追加标签过滤条件
+         *
+         * @param tag 标签值
+         * @return 当前构建器
+         */
+        UserProfileESQueryBuilder tagFilter(String tag) {
+            if (StringUtils.isNotBlank(tag)) {
+                must.add(term("tags", tag));
+            }
+            return this;
+        }
+
+        /**
+         * 追加距离衰减打分函数
+         *
+         * @param latitude 用户纬度
+         * @param longitude 用户经度
+         * @param orderBy 排序策略
+         * @return 当前构建器
+         */
+        UserProfileESQueryBuilder distanceFunction(BigDecimal latitude, BigDecimal longitude, Integer orderBy) {
+            if (latitude == null || longitude == null) {
+                return this;
+            }
+            Map<String, Object> location = new LinkedHashMap<>();
+            location.put("origin", latitude + "," + longitude);
+            location.put("scale", "3km");
+            location.put("offset", "300m");
+            location.put("decay", 0.5);
+
+            Map<String, Object> gauss = new LinkedHashMap<>();
+            gauss.put("location", location);
+
+            Map<String, Object> function = new LinkedHashMap<>();
+            function.put("gauss", gauss);
+            function.put("weight", (orderBy != null && orderBy == 1) ? 28 : 14);
+            functions.add(function);
+            return this;
+        }
+
+        /**
+         * 追加店铺质量打分函数
+         *
+         * @return 当前构建器
+         */
+        UserProfileESQueryBuilder shopQualityFunction() {
+            Map<String, Object> shopQuality = new LinkedHashMap<>();
+            Map<String, Object> scoreFactor = new LinkedHashMap<>();
+            scoreFactor.put("field", "score");
+            scoreFactor.put("modifier", "sqrt");
+            scoreFactor.put("missing", 1.0);
+            shopQuality.put("field_value_factor", scoreFactor);
+            shopQuality.put("weight", 4.0);
+            functions.add(shopQuality);
+
+            Map<String, Object> sellerQuality = new LinkedHashMap<>();
+            Map<String, Object> sellerFactor = new LinkedHashMap<>();
+            sellerFactor.put("field", "seller_score");
+            sellerFactor.put("modifier", "sqrt");
+            sellerFactor.put("missing", 1.0);
+            sellerQuality.put("field_value_factor", sellerFactor);
+            sellerQuality.put("weight", 2.0);
+            functions.add(sellerQuality);
+            return this;
+        }
+
+        /**
+         * 追加热度打分函数
+         *
+         * @return 当前构建器
+         */
+        UserProfileESQueryBuilder hotScoreFunction() {
+            Map<String, Object> hotFunction = new LinkedHashMap<>();
+            Map<String, Object> scriptScore = new LinkedHashMap<>();
+            Map<String, Object> script = new LinkedHashMap<>();
+            script.put("lang", "painless");
+            script.put("source",
+                    "double shop = (doc.containsKey('score') && !doc['score'].empty) ? doc['score'].value : 3.0; " +
+                            "double seller = (doc.containsKey('seller_score') && !doc['seller_score'].empty) ? doc['seller_score'].value : 3.0; " +
+                            "double hot = shop * 0.7 + seller * 0.3; " +
+                            "return Math.log(1 + hot);");
+            scriptScore.put("script", script);
+            hotFunction.put("script_score", scriptScore);
+            hotFunction.put("weight", 1.6);
+            functions.add(hotFunction);
+            return this;
+        }
+
+        /**
+         * 追加画像个性化打分函数
+         *
+         * @param profile 用户画像
+         * @return 当前构建器
+         */
+        UserProfileESQueryBuilder profileFunctions(UserShopProfile profile) {
+            if (profile == null) {
+                return this;
+            }
+            // 置信度作为画像总闸门，低置信度用户减少个性化干预
+            double profileConfidence = clamp(profile.getProfileConfidence(), 0.25, 1.0);
+
+            List<Long> favoriteShops = cap(profile.getFavoriteShopIds(), scriptShopIdLimit);
+            List<Long> recentShops = cap(profile.getRecentActiveShopIds(), scriptShopIdLimit);
+            List<Map.Entry<Long, Double>> shopPreference = capEntriesByScore(profile.getShopPreference(), scriptShopIdLimit);
+
+            if (CollectionUtil.isNotEmpty(shopPreference)) {
+                // 按店铺偏好强度逐条注入权重，实现细粒度个性化
+                for (Map.Entry<Long, Double> entry : shopPreference) {
+                    double strength = clamp(entry.getValue(), 0.05, 1.0);
+                    double weight = 1.8 + strength * (5.0 + profileConfidence * 5.0);
+                    functions.add(weightWithFilter(term("id", entry.getKey()), weight));
+                }
+            } else if (CollectionUtil.isNotEmpty(favoriteShops)) {
+                functions.add(weightWithFilter(terms("id", favoriteShops), 5.0 + 2.0 * profileConfidence));
+            }
+            if (CollectionUtil.isNotEmpty(recentShops)) {
+                functions.add(weightWithFilter(terms("id", recentShops), 3.2 + 2.0 * profileConfidence));
+            }
+
+            if (profile.getCategoryPreference() != null) {
+                profile.getCategoryPreference().forEach((categoryId, strength) -> {
+                    if (categoryId == null || strength == null || strength <= 0) {
+                        return;
+                    }
+                    double weight = 1.5 + clamp(strength, 0.05, 1.0) * (3.5 + 2.5 * profileConfidence);
+                    functions.add(weightWithFilter(term("category_id", categoryId), weight));
+                });
+            }
+
+            if (profile.getAvgPriceLevel() != null && profile.getAvgPriceLevel() > 0) {
+                Map<String, Object> priceAffinity = new LinkedHashMap<>();
+                Map<String, Object> scriptScore = new LinkedHashMap<>();
+                Map<String, Object> script = new LinkedHashMap<>();
+                Map<String, Object> params = new LinkedHashMap<>();
+                params.put("target", profile.getAvgPriceLevel());
+                params.put("lower", profile.getPriceLowerBound() == null ? Math.max(1, profile.getAvgPriceLevel() - 20) : profile.getPriceLowerBound());
+                params.put("upper", profile.getPriceUpperBound() == null ? profile.getAvgPriceLevel() + 20 : profile.getPriceUpperBound());
+                params.put("tolerance", profile.getPriceTolerance() == null ? 20 : profile.getPriceTolerance());
+                script.put("lang", "painless");
+                // 价格打分由中心贴合度和区间可接受度组成
+                // 中心用于排序细分，区间用于抑制过高或过低价格结果
+                script.put("source",
+                        "if (!doc.containsKey('per_capita_price') || doc['per_capita_price'].empty) return 0.2; " +
+                                "double price = doc['per_capita_price'].value; " +
+                                "double target = params.target; " +
+                                "double lower = params.lower; " +
+                                "double upper = params.upper; " +
+                                "double tolerance = Math.max(params.tolerance, 1.0); " +
+                                "double centerScore = Math.exp(-Math.abs(price - target) / tolerance); " +
+                                "double edgeGap = 0.0; " +
+                                "if (price < lower) { edgeGap = lower - price; } else if (price > upper) { edgeGap = price - upper; } " +
+                                "double rangeScore = edgeGap <= 0 ? 1.0 : Math.exp(-edgeGap / tolerance); " +
+                                "return centerScore * 0.7 + rangeScore * 0.3;");
+                script.put("params", params);
+                scriptScore.put("script", script);
+                priceAffinity.put("script_score", scriptScore);
+                priceAffinity.put("weight", 1.8 + 2.2 * profileConfidence);
+                functions.add(priceAffinity);
+            }
+            return this;
+        }
+
+        /**
+         * 追加距离脚本字段
+         *
+         * @param latitude 用户纬度
+         * @param longitude 用户经度
+         * @return 当前构建器
+         */
+        UserProfileESQueryBuilder distanceScriptField(BigDecimal latitude, BigDecimal longitude) {
+            if (latitude == null || longitude == null) {
+                return this;
+            }
+            Map<String, Object> distanceField = new LinkedHashMap<>();
+            Map<String, Object> script = new LinkedHashMap<>();
+            Map<String, Object> params = new LinkedHashMap<>();
+            params.put("lat", latitude);
+            params.put("lon", longitude);
+            script.put("source", "haversin(lat,lon,doc['location'].lat,doc['location'].lon)");
+            script.put("lang", "expression");
+            script.put("params", params);
+            distanceField.put("script", script);
+            scriptFields.put("distance", distanceField);
+            return this;
+        }
+
+        /**
+         * 生成最终 ES 查询结构
+         *
+         * @param current 页码
+         * @param size 每页条数
+         * @return ES 查询结构
+         */
+        Map<String, Object> build(long current, long size) {
+            root.put("_source", List.of("*"));
+            root.put("from", Math.max((current - 1) * size, 0));
+            root.put("size", size);
+
+            Map<String, Object> query = new LinkedHashMap<>();
+            query.put("function_score", functionScore);
+            root.put("query", query);
+
+            if (!scriptFields.isEmpty()) {
+                root.put("script_fields", scriptFields);
+            }
+
+            Map<String, Object> aggs = new LinkedHashMap<>();
+            Map<String, Object> groupByTags = new LinkedHashMap<>();
+            groupByTags.put("terms", Map.of("field", "tags"));
+            aggs.put("group_by_tags", groupByTags);
+            root.put("aggs", aggs);
+            return root;
+        }
+
+        /**
+         * 构建 match 子句
+         *
+         * @param field 目标字段
+         * @param keyword 关键词
+         * @param boost 权重
+         * @return match 语句
+         */
+        private static Map<String, Object> match(String field, String keyword, double boost) {
+            Map<String, Object> match = new LinkedHashMap<>();
+            Map<String, Object> fieldQuery = new LinkedHashMap<>();
+            fieldQuery.put("query", keyword);
+            fieldQuery.put("boost", boost);
+            match.put("match", Map.of(field, fieldQuery));
+            return match;
+        }
+
+        /**
+         * 构建 term 子句
+         *
+         * @param field 目标字段
+         * @param value 匹配值
+         * @return term 语句
+         */
+        private static Map<String, Object> term(String field, Object value) {
+            return Map.of("term", Map.of(field, value));
+        }
+
+        /**
+         * 构建 terms 子句
+         *
+         * @param field 目标字段
+         * @param values 匹配值列表
+         * @return terms 语句
+         */
+        private static Map<String, Object> terms(String field, List<Long> values) {
+            return Map.of("terms", Map.of(field, values));
+        }
+
+        /**
+         * 构建带过滤条件的加权函数
+         *
+         * @param filter 过滤条件
+         * @param weight 权重值
+         * @return 加权函数结构
+         */
+        private static Map<String, Object> weightWithFilter(Map<String, Object> filter, double weight) {
+            Map<String, Object> function = new LinkedHashMap<>();
+            function.put("filter", filter);
+            function.put("weight", weight);
+            return function;
+        }
+
+        /**
+         * 截断并去重 ID 列表
+         *
+         * @param source 原始列表
+         * @param limit 最大保留数量
+         * @return 截断后的列表
+         */
+        private static List<Long> cap(List<Long> source, int limit) {
+            if (CollectionUtil.isEmpty(source)) {
+                return Collections.emptyList();
+            }
+            return source.stream().filter(Objects::nonNull).distinct().limit(limit).collect(Collectors.toList());
+        }
+
+        /**
+         * 按分值排序并截断映射条目
+         *
+         * @param source 分值映射
+         * @param limit 最大保留数量
+         * @return 排序截断后的条目列表
+         */
+        private static List<Map.Entry<Long, Double>> capEntriesByScore(Map<Long, Double> source, int limit) {
+            if (source == null || source.isEmpty()) {
+                return Collections.emptyList();
+            }
+            return source.entrySet().stream()
+                    .filter(entry -> entry.getKey() != null && entry.getValue() != null && entry.getValue() > 0)
+                    .sorted(Comparator.comparing(Map.Entry<Long, Double>::getValue).reversed())
+                    .limit(limit)
+                    .toList();
+        }
+
+        /**
+         * 对数值做上下界裁剪
+         *
+         * @param value 原始值
+         * @param min 下界
+         * @param max 上界
+         * @return 裁剪后的值
+         */
+        private static double clamp(Double value, double min, double max) {
+            if (value == null) {
+                return min;
+            }
+            return Math.max(min, Math.min(value, max));
+        }
+    }
+}
