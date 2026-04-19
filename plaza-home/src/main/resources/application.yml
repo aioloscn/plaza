@@ -6,3 +6,55 @@ spring:
     active: dev
   application:
     name: plaza-home
+
+home:
+  user-profile:
+    score:
+      apollo-namespace: ${HOME_USER_PROFILE_SCORE_APOLLO_NAMESPACE:application}
+      max-boost: ${HOME_USER_PROFILE_SCORE_MAX_BOOST:200}
+      quality:
+        shop-score-weight: ${HOME_USER_PROFILE_SCORE_QUALITY_SHOP_SCORE_WEIGHT:4.0}
+        seller-score-weight: ${HOME_USER_PROFILE_SCORE_QUALITY_SELLER_SCORE_WEIGHT:2.0}
+      hot:
+        weight: ${HOME_USER_PROFILE_SCORE_HOT_WEIGHT:1.6}
+        shop-factor: ${HOME_USER_PROFILE_SCORE_HOT_SHOP_FACTOR:0.7}
+        seller-factor: ${HOME_USER_PROFILE_SCORE_HOT_SELLER_FACTOR:0.3}
+        shop-missing-value: ${HOME_USER_PROFILE_SCORE_HOT_SHOP_MISSING_VALUE:3.0}
+        seller-missing-value: ${HOME_USER_PROFILE_SCORE_HOT_SELLER_MISSING_VALUE:3.0}
+      keyword:
+        name-clean-boost: ${HOME_USER_PROFILE_SCORE_KEYWORD_NAME_CLEAN_BOOST:3.0}
+        name-boost: ${HOME_USER_PROFILE_SCORE_KEYWORD_NAME_BOOST:1.5}
+        tags-boost: ${HOME_USER_PROFILE_SCORE_KEYWORD_TAGS_BOOST:1.0}
+        description-boost: ${HOME_USER_PROFILE_SCORE_KEYWORD_DESCRIPTION_BOOST:1.5}
+        address-boost: ${HOME_USER_PROFILE_SCORE_KEYWORD_ADDRESS_BOOST:0.6}
+      shop:
+        preference-base-weight: ${HOME_USER_PROFILE_SCORE_SHOP_PREFERENCE_BASE_WEIGHT:1.8}
+        preference-range-weight: ${HOME_USER_PROFILE_SCORE_SHOP_PREFERENCE_RANGE_WEIGHT:5.0}
+        preference-confidence-weight: ${HOME_USER_PROFILE_SCORE_SHOP_PREFERENCE_CONFIDENCE_WEIGHT:5.0}
+        favorite-base-weight: ${HOME_USER_PROFILE_SCORE_SHOP_FAVORITE_BASE_WEIGHT:5.0}
+        favorite-confidence-weight: ${HOME_USER_PROFILE_SCORE_SHOP_FAVORITE_CONFIDENCE_WEIGHT:2.0}
+        recent-base-weight: ${HOME_USER_PROFILE_SCORE_SHOP_RECENT_BASE_WEIGHT:3.2}
+        recent-confidence-weight: ${HOME_USER_PROFILE_SCORE_SHOP_RECENT_CONFIDENCE_WEIGHT:2.0}
+        recent-new-base-weight: ${HOME_USER_PROFILE_SCORE_SHOP_RECENT_NEW_BASE_WEIGHT:4.2}
+        recent-new-confidence-weight: ${HOME_USER_PROFILE_SCORE_SHOP_RECENT_NEW_CONFIDENCE_WEIGHT:2.2}
+      category:
+        preference-base-weight: ${HOME_USER_PROFILE_SCORE_CATEGORY_PREFERENCE_BASE_WEIGHT:1.5}
+        preference-range-weight: ${HOME_USER_PROFILE_SCORE_CATEGORY_PREFERENCE_RANGE_WEIGHT:3.5}
+        preference-confidence-weight: ${HOME_USER_PROFILE_SCORE_CATEGORY_PREFERENCE_CONFIDENCE_WEIGHT:2.5}
+        favorite-base-weight: ${HOME_USER_PROFILE_SCORE_CATEGORY_FAVORITE_BASE_WEIGHT:2.8}
+        favorite-confidence-weight: ${HOME_USER_PROFILE_SCORE_CATEGORY_FAVORITE_CONFIDENCE_WEIGHT:1.6}
+      price:
+        base-weight: ${HOME_USER_PROFILE_SCORE_PRICE_BASE_WEIGHT:1.8}
+        confidence-weight: ${HOME_USER_PROFILE_SCORE_PRICE_CONFIDENCE_WEIGHT:2.2}
+        missing-score: ${HOME_USER_PROFILE_SCORE_PRICE_MISSING_SCORE:0.2}
+        center-score-weight: ${HOME_USER_PROFILE_SCORE_PRICE_CENTER_SCORE_WEIGHT:0.7}
+        range-score-weight: ${HOME_USER_PROFILE_SCORE_PRICE_RANGE_SCORE_WEIGHT:0.3}
+        fallback-tolerance: ${HOME_USER_PROFILE_SCORE_PRICE_FALLBACK_TOLERANCE:20}
+      profile-confidence-floor: ${HOME_USER_PROFILE_SCORE_PROFILE_CONFIDENCE_FLOOR:0.25}
+      preference-strength-floor: ${HOME_USER_PROFILE_SCORE_PREFERENCE_STRENGTH_FLOOR:0.05}
+      distance:
+        default-weight: ${HOME_USER_PROFILE_SCORE_DISTANCE_DEFAULT_WEIGHT:14}
+        order-by-distance-weight: ${HOME_USER_PROFILE_SCORE_DISTANCE_ORDER_BY_DISTANCE_WEIGHT:28}
+        scale: ${HOME_USER_PROFILE_SCORE_DISTANCE_SCALE:3km}
+        offset: ${HOME_USER_PROFILE_SCORE_DISTANCE_OFFSET:300m}
+        decay: ${HOME_USER_PROFILE_SCORE_DISTANCE_DECAY:0.5}

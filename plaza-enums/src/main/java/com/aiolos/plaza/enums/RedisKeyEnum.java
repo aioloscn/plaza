@@ -61,8 +61,8 @@ public enum RedisKeyEnum {
     /** 单个用户秒杀防刷频控标记 (如10秒过期) */
     SECKILL_LIMIT("seckill:limit:%s", 10L),
 
-    /** 首页门店检索用户画像缓存 String (默认6小时) */
-    HOME_USER_PROFILE("home:user:profile:%s", 6 * 3600L),
+    /** 首页门店检索用户画像缓存 String (默认36小时，覆盖夜间全量重建间隔) */
+    HOME_USER_PROFILE("home:user:profile:%s", 36 * 3600L),
 
     /** 秒杀订单确认令牌缓存 String (默认10分钟) */
     ORDER_CONFIRM_TOKEN("order:confirm:token:%s:%s", 600L);

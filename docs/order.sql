@@ -248,3 +248,54 @@ CREATE TABLE `refund_log` (
   PRIMARY KEY (`id`),
   KEY `idx_refund_request_no` (`refund_request_no`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COMMENT='退款日志表';
+
+DROP TABLE IF EXISTS `user_shop_profile_snapshot`;
+CREATE TABLE `user_shop_profile_snapshot` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `user_id` bigint(20) NOT NULL COMMENT '用户ID',
+  `favorite_shop_ids_json` json DEFAULT NULL COMMENT '长期偏好店铺ID列表',
+  `recent_active_shop_ids_json` json DEFAULT NULL COMMENT '近7天活跃但非新店的店铺ID列表',
+  `recent_new_shop_ids_json` json DEFAULT NULL COMMENT '近7天首次出现的新店铺ID列表',
+  `shop_preference_json` json DEFAULT NULL COMMENT '店铺偏好强度映射，key为shopId，value为归一化强度',
+  `favorite_category_ids_json` json DEFAULT NULL COMMENT '类目TopN兜底列表',
+  `category_preference_json` json DEFAULT NULL COMMENT '类目偏好强度映射，key为categoryId，value为归一化强度',
+  `avg_price_level` int(11) DEFAULT NULL COMMENT '用户可接受价格中心值',
+  `price_lower_bound` int(11) DEFAULT NULL COMMENT '价格偏好下界',
+  `price_upper_bound` int(11) DEFAULT NULL COMMENT '价格偏好上界',
+  `price_tolerance` int(11) DEFAULT NULL COMMENT '价格容忍波动',
+  `profile_confidence` decimal(10,4) DEFAULT NULL COMMENT '画像置信度',
+  `shop_strength_raw_json` json DEFAULT NULL COMMENT '长期店铺偏好原始强度映射',
+  `recent_shop_strength_raw_json` json DEFAULT NULL COMMENT '近7天活跃店铺原始强度映射',
+  `recent_new_shop_strength_raw_json` json DEFAULT NULL COMMENT '近7天新店原始强度映射',
+  `category_strength_raw_json` json DEFAULT NULL COMMENT '类目原始强度映射',
+  `pay_weighted_sum_raw` decimal(20,4) DEFAULT NULL COMMENT '订单层价格中心值加权分子',
+  `pay_weight_total_raw` decimal(18,6) DEFAULT NULL COMMENT '订单层价格中心值加权分母',
+  `price_weighted_sum_raw` decimal(20,4) DEFAULT NULL COMMENT '商品层价格画像加权分子',
+  `price_weighted_square_sum_raw` decimal(24,4) DEFAULT NULL COMMENT '商品层价格平方加权分子',
+  `price_weighted_factor_raw` decimal(18,6) DEFAULT NULL COMMENT '商品层价格画像加权分母',
+  `paid_order_count_raw` int(11) DEFAULT NULL COMMENT '已支付订单样本数',
+  `paid_item_count_raw` int(11) DEFAULT NULL COMMENT '已支付订单项样本数',
+  `recent_paid_order_count_raw` int(11) DEFAULT NULL COMMENT '近7天已支付订单样本数',
+  `create_time` datetime DEFAULT NULL COMMENT '创建时间',
+  `update_time` datetime DEFAULT NULL COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_user_id` (`user_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COMMENT='用户门店画像快照表';
+
+DROP TABLE IF EXISTS `shop_search_boost_config`;
+CREATE TABLE `shop_search_boost_config` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `seller_id` bigint(20) DEFAULT NULL COMMENT '商家ID，连锁投放时使用，shop_id 为空',
+  `shop_id` bigint(20) DEFAULT NULL COMMENT '店铺ID，单店投放时使用，seller_id 为空',
+  `boost_weight` decimal(10,4) NOT NULL COMMENT '业务曝光权重',
+  `status` tinyint(1) NOT NULL DEFAULT '1' COMMENT '状态：0-停用，1-启用',
+  `start_time` datetime DEFAULT NULL COMMENT '生效开始时间',
+  `end_time` datetime DEFAULT NULL COMMENT '生效结束时间',
+  `remark` varchar(255) DEFAULT NULL COMMENT '备注',
+  `create_time` datetime DEFAULT NULL COMMENT '创建时间',
+  `update_time` datetime DEFAULT NULL COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_seller_id` (`seller_id`),
+  UNIQUE KEY `uk_shop_id` (`shop_id`),
+  KEY `idx_status_time` (`status`,`start_time`,`end_time`)
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COMMENT='门店搜索业务曝光权重表';

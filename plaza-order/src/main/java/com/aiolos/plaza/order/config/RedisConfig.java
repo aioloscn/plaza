@@ -1,5 +1,6 @@
 package com.aiolos.plaza.order.config;
 
+import io.lettuce.core.api.StatefulConnection;
 import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.data.redis.RedisProperties;
@@ -52,7 +53,7 @@ public class RedisConfig {
             configuration.setPassword(RedisPassword.of(properties.getPassword()));
         }
 
-        GenericObjectPoolConfig<?> poolConfig = new GenericObjectPoolConfig<>();
+        GenericObjectPoolConfig<StatefulConnection<?, ?>> poolConfig = new GenericObjectPoolConfig<>();
         if (properties.getLettuce() != null && properties.getLettuce().getPool() != null) {
             poolConfig.setMaxTotal(properties.getLettuce().getPool().getMaxActive());
             poolConfig.setMaxIdle(properties.getLettuce().getPool().getMaxIdle());

@@ -26,8 +26,8 @@ public class UserShopProfileJob {
     }
 
     /**
-     * 构建最近活跃用户的画像缓存
-     * 建议 cron：0 0/15 * * * ?
+     * 每天 20:00 全量重建用户画像快照并回填缓存
+     * 建议 cron：0 0 20 * * ?
      */
     @XxlJob("homeUserShopProfileBuildJob")
     public void homeUserShopProfileBuildJob() {

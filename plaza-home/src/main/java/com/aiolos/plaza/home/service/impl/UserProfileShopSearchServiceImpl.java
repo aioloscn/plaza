@@ -8,18 +8,25 @@ import com.aiolos.common.wrapper.PageResult;
 import com.aiolos.plaza.enums.OrderPaymentStatus;
 import com.aiolos.plaza.enums.RedisKeyEnum;
 import com.aiolos.plaza.enums.exceptions.HomeExceptionEnum;
+import com.aiolos.plaza.home.config.UserProfileScoreConfig;
 import com.aiolos.plaza.home.model.bo.RecommendShopBO;
 import com.aiolos.plaza.home.model.bo.SearchShopBO;
 import com.aiolos.plaza.home.model.bo.UserProfileSearchShopBO;
+import com.aiolos.plaza.home.model.profile.ShopSearchBusinessBoostProfile;
 import com.aiolos.plaza.home.model.profile.UserShopProfile;
 import com.aiolos.plaza.home.model.vo.RecommendShopVO;
 import com.aiolos.plaza.home.service.HomeShopService;
 import com.aiolos.plaza.home.service.UserProfileShopSearchService;
 import com.aiolos.plaza.mapper.OrderItemMapper;
 import com.aiolos.plaza.mapper.OrderMapper;
+import com.aiolos.plaza.mapper.ShopSearchBoostConfigMapper;
+import com.aiolos.plaza.mapper.UserShopProfileSnapshotMapper;
 import com.aiolos.plaza.model.po.Order;
 import com.aiolos.plaza.model.po.OrderItem;
+import com.aiolos.plaza.model.po.ShopSearchBoostConfig;
+import com.aiolos.plaza.model.po.UserShopProfileSnapshot;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.AllArgsConstructor;
@@ -40,10 +47,13 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -116,42 +126,10 @@ public class UserProfileShopSearchServiceImpl implements UserProfileShopSearchSe
     private final StringRedisTemplate stringRedisTemplate;
     private final OrderMapper orderMapper;
     private final OrderItemMapper orderItemMapper;
+    private final ShopSearchBoostConfigMapper shopSearchBoostConfigMapper;
+    private final UserShopProfileSnapshotMapper userShopProfileSnapshotMapper;
     private final HomeShopService homeShopService;
-
-    /**
-     * 搜索主流程
-     * 使用当前登录用户构建画像并参与检索打分
-     * @param model 搜索分页请求，包含坐标、关键词和画像开关
-     * @return 门店推荐分页结果
-     */
-    @Override
-    public PageResult<RecommendShopVO> searchES(PageModel<UserProfileSearchShopBO> model) {
-        // 空参保护，保持与控制层一致
-        UserProfileSearchShopBO req = model.getData();
-        PageResult<RecommendShopVO> pageResult = new PageResult<>();
-        pageResult.setCurrent(model.getCurrent());
-        pageResult.setSize(model.getSize());
-
-        Long userId = ContextInfo.getUserId();
-        if (!shouldUseUserProfileQuery()) {
-            return homeShopService.searchES(convertLegacyModel(model));
-        }
-
-        UserShopProfile profile = getProfile(req, userId);
-        String queryJson = buildESQuery(req, profile, model.getCurrent(), model.getSize());
-        log.info(queryJson);
-        try {
-            Request request = new Request("GET", "/shop/_search");
-            request.setJsonEntity(queryJson);
-            Response response = restClient.performRequest(request);
-            String responseBody = new String(response.getEntity().getContent().readAllBytes());
-            return parseESResult(responseBody, pageResult);
-        } catch (IOException e) {
-            log.error("用户画像ES检索失败, req={}, userId={}", req, userId, e);
-            ExceptionUtil.throwException(HomeExceptionEnum.HOME_ES_QUERY_FAIL);
-            return pageResult; // 理论不会到达，这里只是兜底
-        }
-    }
+    private final UserProfileScoreConfig userProfileScoreConfig;
 
     /**
      * 首页推荐统一入口
@@ -165,6 +143,7 @@ public class UserProfileShopSearchServiceImpl implements UserProfileShopSearchSe
         if (!shouldUseUserProfileQuery()) {
             return homeShopService.recommend(model);
         }
+        log.info("userId: {} 命中灰度recommendES", ContextInfo.getUserId());
 
         UserProfileSearchShopBO req = convertRecommendToUserProfileRequest(model.getData());
         PageResult<RecommendShopVO> pageResult = new PageResult<>();
@@ -185,6 +164,42 @@ public class UserProfileShopSearchServiceImpl implements UserProfileShopSearchSe
             log.error("首页推荐画像ES检索失败, req={}, userId={}", req, userId, e);
             ExceptionUtil.throwException(HomeExceptionEnum.HOME_ES_QUERY_FAIL);
             return pageResult;
+        }
+    }
+    
+    /**
+     * 搜索主流程
+     * 使用当前登录用户构建画像并参与检索打分
+     * @param model 搜索分页请求，包含坐标、关键词和画像开关
+     * @return 门店推荐分页结果
+     */
+    @Override
+    public PageResult<RecommendShopVO> searchES(PageModel<UserProfileSearchShopBO> model) {
+        // 空参保护，保持与控制层一致
+        UserProfileSearchShopBO req = model.getData();
+        PageResult<RecommendShopVO> pageResult = new PageResult<>();
+        pageResult.setCurrent(model.getCurrent());
+        pageResult.setSize(model.getSize());
+
+        Long userId = ContextInfo.getUserId();
+        if (!shouldUseUserProfileQuery()) {
+            return homeShopService.searchES(convertLegacyModel(model));
+        }
+        log.info("userId: {} 命中灰度searchES", ContextInfo.getUserId());
+
+        UserShopProfile profile = getProfile(req, userId);
+        String queryJson = buildESQuery(req, profile, model.getCurrent(), model.getSize());
+        log.info(queryJson);
+        try {
+            Request request = new Request("GET", "/shop/_search");
+            request.setJsonEntity(queryJson);
+            Response response = restClient.performRequest(request);
+            String responseBody = new String(response.getEntity().getContent().readAllBytes());
+            return parseESResult(responseBody, pageResult);
+        } catch (IOException e) {
+            log.error("用户画像ES检索失败, req={}, userId={}", req, userId, e);
+            ExceptionUtil.throwException(HomeExceptionEnum.HOME_ES_QUERY_FAIL);
+            return pageResult; // 理论不会到达，这里只是兜底
         }
     }
 
@@ -281,7 +296,12 @@ public class UserProfileShopSearchServiceImpl implements UserProfileShopSearchSe
                 stringRedisTemplate.delete(key);
             }
         }
-        log.debug("用户画像缓存未命中，返回空画像等待定时任务构建, userId={}", userId);
+        UserShopProfile snapshotProfile = getProfileFromSnapshot(userId);
+        if (snapshotProfile != null) {
+            saveProfileToCache(snapshotProfile);
+            return snapshotProfile;
+        }
+        log.debug("用户画像缓存和快照表均未命中，返回空画像等待定时任务构建, userId={}", userId);
         UserShopProfile profile = new UserShopProfile();
         profile.setUserId(userId);
         return profile;
@@ -348,6 +368,7 @@ public class UserProfileShopSearchServiceImpl implements UserProfileShopSearchSe
         if (profile.getUserId() == null) {
             profile.setUserId(userId);
         }
+        saveProfileSnapshot(profile);
         saveProfileToCache(profile);
     }
 
@@ -380,11 +401,23 @@ public class UserProfileShopSearchServiceImpl implements UserProfileShopSearchSe
         Map<Long, Order> orderIndex = orders.stream()
                 .filter(order -> order.getId() != null)
                 .collect(Collectors.toMap(Order::getId, order -> order, (a, b) -> a));
+
+        // 记录订单级时间衰减，后续 item 聚合时继续复用，避免重复计算
         Map<Long, Double> orderRecency = new HashMap<>();
+        // 记录订单级综合行为权重，后续识别近 7 天新店时直接复用
+        Map<Long, Double> orderBehaviorWeight = new HashMap<>();
+        // 表示 30 天窗口内的长期店铺偏好强度
         Map<Long, Double> shopStrength = new HashMap<>();
+        // 表示近 7 天活跃店铺强度
         Map<Long, Double> recentShopStrength = new HashMap<>();
+        // 表示近 7 天首次出现的新店铺强度
+        Map<Long, Double> recentNewShopStrength = new HashMap<>();
+        // 记录近 7 天之前出现过的店铺，用于识别真正的新店
+        Set<Long> historicalShopIds = new HashSet<>();
+        // payWeightedSum 和 payWeightTotal 分别是订单层价格中心值的加权分子与分母，用于先粗算用户消费均价
         BigDecimal payWeightedSum = BigDecimal.ZERO;
         double payWeightTotal = 0D;
+
         // 第一层聚合以订单为单位构建行为强度
         // 同时融合时间衰减和消费金额权重，避免早期大单长期主导画像
         for (Order order : orders) {
@@ -395,10 +428,13 @@ public class UserProfileShopSearchServiceImpl implements UserProfileShopSearchSe
             orderRecency.put(order.getId(), recencyWeight);
             double amountWeight = amountWeight(order.getPayAmount());
             double behaviorWeight = recencyWeight * amountWeight;
+            orderBehaviorWeight.put(order.getId(), behaviorWeight);
             if (order.getShopId() != null) {
                 shopStrength.merge(order.getShopId(), behaviorWeight, Double::sum);
                 if (order.getCreateTime() != null && !order.getCreateTime().isBefore(recentStart)) {
                     recentShopStrength.merge(order.getShopId(), behaviorWeight, Double::sum);
+                } else {
+                    historicalShopIds.add(order.getShopId());
                 }
             }
             if (order.getPayAmount() != null && order.getPayAmount().compareTo(BigDecimal.ZERO) > 0) {
@@ -406,9 +442,41 @@ public class UserProfileShopSearchServiceImpl implements UserProfileShopSearchSe
                 payWeightTotal += recencyWeight;
             }
         }
-        profile.setFavoriteShopIds(topNKeysByScore(shopStrength, PROFILE_MAX_SHOP_COUNT));
-        profile.setRecentActiveShopIds(topNKeysByScore(recentShopStrength, PROFILE_MAX_SHOP_COUNT));
+        for (Order order : orders) {
+            if (order.getShopId() == null || order.getId() == null) {
+                continue;
+            }
+            if (order.getCreateTime() == null || order.getCreateTime().isBefore(recentStart)) {
+                continue;
+            }
+            if (historicalShopIds.contains(order.getShopId())) {
+                continue;
+            }
+            recentNewShopStrength.merge(order.getShopId(), orderBehaviorWeight.getOrDefault(order.getId(), 0D), Double::sum);
+        }
+
+        // favorites 优先级最高
+        List<Long> favoriteShopIds = topNKeysByScore(shopStrength, PROFILE_MAX_SHOP_COUNT);
+        Set<Long> favoriteShopIdSet = new LinkedHashSet<>(favoriteShopIds);
+        // recent new 只保留 favorites 之外的店铺，避免同一店铺被重复加权
+        List<Long> recentNewShopIds = topNKeysByScore(excludeKeys(recentNewShopStrength, favoriteShopIdSet), PROFILE_MAX_SHOP_COUNT);
+        Set<Long> recentNewShopIdSet = new LinkedHashSet<>(recentNewShopIds);
+        // recent active 表示近 7 天活跃但并非最近首次出现的新店，排除 favorites 和 recent new 后保留“近期回访/回流”的店铺
+        List<Long> recentActiveShopIds = topNKeysByScore(
+                excludeKeys(recentShopStrength, unionSet(favoriteShopIdSet, recentNewShopIdSet)),
+                PROFILE_MAX_SHOP_COUNT
+        );
+
+        profile.setFavoriteShopIds(favoriteShopIds);
+        profile.setRecentNewShopIds(recentNewShopIds);
+        profile.setRecentActiveShopIds(recentActiveShopIds);
         profile.setShopPreference(normalizePreference(shopStrength, PROFILE_MAX_SHOP_COUNT));
+        profile.setShopStrengthRaw(new LinkedHashMap<>(shopStrength));
+        profile.setRecentShopStrengthRaw(new LinkedHashMap<>(recentShopStrength));
+        profile.setRecentNewShopStrengthRaw(new LinkedHashMap<>(recentNewShopStrength));
+        profile.setPayWeightedSumRaw(payWeightedSum);
+        profile.setPayWeightTotalRaw(payWeightTotal);
+        profile.setPaidOrderCountRaw(orders.size());
 
         if (payWeightTotal > 0) {
             profile.setAvgPriceLevel(payWeightedSum.divide(BigDecimal.valueOf(payWeightTotal), 0, RoundingMode.HALF_UP).intValue());
@@ -430,6 +498,7 @@ public class UserProfileShopSearchServiceImpl implements UserProfileShopSearchSe
         BigDecimal weightedPriceSum = BigDecimal.ZERO;
         BigDecimal weightedSquarePriceSum = BigDecimal.ZERO;
         double weightedPriceFactor = 0D;
+        
         // 第二层聚合以订单商品为单位细化偏好
         // 类目偏好引入数量和金额信号，价格画像使用加权均值与方差建模区间
         for (OrderItem orderItem : orderItems) {
@@ -458,8 +527,14 @@ public class UserProfileShopSearchServiceImpl implements UserProfileShopSearchSe
             weightedPriceFactor += recencyWeight * quantity;
         }
         profile.setCategoryPreference(normalizePreference(categoryStrength, PROFILE_MAX_CATEGORY_COUNT));
+        profile.setFavoriteCategoryIds(topNKeysByScore(categoryStrength, PROFILE_MAX_CATEGORY_COUNT));
+        profile.setCategoryStrengthRaw(new LinkedHashMap<>(categoryStrength));
+        profile.setPaidItemCountRaw(orderItems.size());
 
         if (weightedPriceFactor > 0) {
+            profile.setPriceWeightedSumRaw(weightedPriceSum);
+            profile.setPriceWeightedSquareSumRaw(weightedSquarePriceSum);
+            profile.setPriceWeightedFactorRaw(weightedPriceFactor);
             double avgPrice = weightedPriceSum.divide(BigDecimal.valueOf(weightedPriceFactor), 4, RoundingMode.HALF_UP).doubleValue();
             double meanSquare = weightedSquarePriceSum.divide(BigDecimal.valueOf(weightedPriceFactor), 4, RoundingMode.HALF_UP).doubleValue();
             double variance = Math.max(0D, meanSquare - avgPrice * avgPrice);
@@ -481,6 +556,7 @@ public class UserProfileShopSearchServiceImpl implements UserProfileShopSearchSe
         long recentOrderCount = orders.stream()
                 .filter(order -> order.getCreateTime() != null && !order.getCreateTime().isBefore(recentStart))
                 .count();
+        profile.setRecentPaidOrderCountRaw((int) recentOrderCount);
         // 画像置信度用于控制个性化放大系数
         // 样本量越大、近期行为越充分，个性化权重越高
         double recentRatio = recentOrderCount * 1.0 / Math.max(orders.size(), 1);
@@ -505,6 +581,141 @@ public class UserProfileShopSearchServiceImpl implements UserProfileShopSearchSe
             stringRedisTemplate.opsForValue().set(key, objectMapper.writeValueAsString(profile), expire, TimeUnit.SECONDS);
         } catch (JsonProcessingException e) {
             log.warn("用户画像缓存序列化失败, userId={}", profile.getUserId(), e);
+        }
+    }
+
+    /**
+     * 从画像快照表回源用户画像
+     * Redis 未命中时优先读快照表，避免查询链路完全丢失个性化能力
+     */
+    private UserShopProfile getProfileFromSnapshot(Long userId) {
+        UserShopProfileSnapshot snapshot = userShopProfileSnapshotMapper.selectOne(
+                new LambdaQueryWrapper<UserShopProfileSnapshot>()
+                        .eq(UserShopProfileSnapshot::getUserId, userId)
+                        .last("limit 1")
+        );
+        if (snapshot == null) {
+            return null;
+        }
+        UserShopProfile profile = new UserShopProfile();
+        profile.setUserId(snapshot.getUserId());
+        // 长期偏好店铺列表
+        profile.setFavoriteShopIds(readJsonList(snapshot.getFavoriteShopIdsJson()));
+        // 近7天活跃但非新店的店铺列表
+        profile.setRecentActiveShopIds(readJsonList(snapshot.getRecentActiveShopIdsJson()));
+        // 近7天首次出现的新店铺列表
+        profile.setRecentNewShopIds(readJsonList(snapshot.getRecentNewShopIdsJson()));
+        // 店铺偏好归一化强度映射
+        profile.setShopPreference(readJsonLongDoubleMap(snapshot.getShopPreferenceJson()));
+        // 类目TopN兜底列表
+        profile.setFavoriteCategoryIds(readJsonList(snapshot.getFavoriteCategoryIdsJson()));
+        // 类目偏好归一化强度映射
+        profile.setCategoryPreference(readJsonLongDoubleMap(snapshot.getCategoryPreferenceJson()));
+        // 价格偏好中心值与区间
+        profile.setAvgPriceLevel(snapshot.getAvgPriceLevel());
+        profile.setPriceLowerBound(snapshot.getPriceLowerBound());
+        profile.setPriceUpperBound(snapshot.getPriceUpperBound());
+        profile.setPriceTolerance(snapshot.getPriceTolerance());
+        // 画像置信度
+        profile.setProfileConfidence(snapshot.getProfileConfidence());
+        // 原始聚合强度映射，供支付后增量刷新继续累加
+        profile.setShopStrengthRaw(readJsonLongDoubleMap(snapshot.getShopStrengthRawJson()));
+        profile.setRecentShopStrengthRaw(readJsonLongDoubleMap(snapshot.getRecentShopStrengthRawJson()));
+        profile.setRecentNewShopStrengthRaw(readJsonLongDoubleMap(snapshot.getRecentNewShopStrengthRawJson()));
+        profile.setCategoryStrengthRaw(readJsonLongDoubleMap(snapshot.getCategoryStrengthRawJson()));
+        // 订单层/商品层价格画像原始统计量
+        profile.setPayWeightedSumRaw(snapshot.getPayWeightedSumRaw() == null ? BigDecimal.ZERO : snapshot.getPayWeightedSumRaw());
+        profile.setPayWeightTotalRaw(snapshot.getPayWeightTotalRaw() == null ? 0D : snapshot.getPayWeightTotalRaw().doubleValue());
+        profile.setPriceWeightedSumRaw(snapshot.getPriceWeightedSumRaw() == null ? BigDecimal.ZERO : snapshot.getPriceWeightedSumRaw());
+        profile.setPriceWeightedSquareSumRaw(snapshot.getPriceWeightedSquareSumRaw() == null ? BigDecimal.ZERO : snapshot.getPriceWeightedSquareSumRaw());
+        profile.setPriceWeightedFactorRaw(snapshot.getPriceWeightedFactorRaw() == null ? 0D : snapshot.getPriceWeightedFactorRaw().doubleValue());
+        // 样本规模统计量，用于置信度重算
+        profile.setPaidOrderCountRaw(snapshot.getPaidOrderCountRaw() == null ? 0 : snapshot.getPaidOrderCountRaw());
+        profile.setPaidItemCountRaw(snapshot.getPaidItemCountRaw() == null ? 0 : snapshot.getPaidItemCountRaw());
+        profile.setRecentPaidOrderCountRaw(snapshot.getRecentPaidOrderCountRaw() == null ? 0 : snapshot.getRecentPaidOrderCountRaw());
+        return profile;
+    }
+
+    /**
+     * 把用户画像持久化到快照表
+     * 夜间全量任务负责重建，查询链路只读缓存和快照，不做回源计算
+     */
+    private void saveProfileSnapshot(UserShopProfile profile) {
+        if (profile == null || profile.getUserId() == null) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        UserShopProfileSnapshot existing = userShopProfileSnapshotMapper.selectOne(
+                new LambdaQueryWrapper<UserShopProfileSnapshot>()
+                        .eq(UserShopProfileSnapshot::getUserId, profile.getUserId())
+                        .last("limit 1")
+        );
+        UserShopProfileSnapshot snapshot = existing == null ? new UserShopProfileSnapshot() : existing;
+        snapshot.setUserId(profile.getUserId());
+        snapshot.setFavoriteShopIdsJson(writeJson(profile.getFavoriteShopIds()));
+        snapshot.setRecentActiveShopIdsJson(writeJson(profile.getRecentActiveShopIds()));
+        snapshot.setRecentNewShopIdsJson(writeJson(profile.getRecentNewShopIds()));
+        snapshot.setShopPreferenceJson(writeJson(profile.getShopPreference()));
+        snapshot.setFavoriteCategoryIdsJson(writeJson(profile.getFavoriteCategoryIds()));
+        snapshot.setCategoryPreferenceJson(writeJson(profile.getCategoryPreference()));
+        snapshot.setAvgPriceLevel(profile.getAvgPriceLevel());
+        snapshot.setPriceLowerBound(profile.getPriceLowerBound());
+        snapshot.setPriceUpperBound(profile.getPriceUpperBound());
+        snapshot.setPriceTolerance(profile.getPriceTolerance());
+        snapshot.setProfileConfidence(profile.getProfileConfidence());
+        snapshot.setShopStrengthRawJson(writeJson(profile.getShopStrengthRaw()));
+        snapshot.setRecentShopStrengthRawJson(writeJson(profile.getRecentShopStrengthRaw()));
+        snapshot.setRecentNewShopStrengthRawJson(writeJson(profile.getRecentNewShopStrengthRaw()));
+        snapshot.setCategoryStrengthRawJson(writeJson(profile.getCategoryStrengthRaw()));
+        snapshot.setPayWeightedSumRaw(profile.getPayWeightedSumRaw());
+        snapshot.setPayWeightTotalRaw(profile.getPayWeightTotalRaw() == null ? null : BigDecimal.valueOf(profile.getPayWeightTotalRaw()));
+        snapshot.setPriceWeightedSumRaw(profile.getPriceWeightedSumRaw());
+        snapshot.setPriceWeightedSquareSumRaw(profile.getPriceWeightedSquareSumRaw());
+        snapshot.setPriceWeightedFactorRaw(profile.getPriceWeightedFactorRaw() == null ? null : BigDecimal.valueOf(profile.getPriceWeightedFactorRaw()));
+        snapshot.setPaidOrderCountRaw(profile.getPaidOrderCountRaw());
+        snapshot.setPaidItemCountRaw(profile.getPaidItemCountRaw());
+        snapshot.setRecentPaidOrderCountRaw(profile.getRecentPaidOrderCountRaw());
+        snapshot.setUpdateTime(now);
+        if (snapshot.getId() == null) {
+            snapshot.setCreateTime(now);
+            userShopProfileSnapshotMapper.insert(snapshot);
+            return;
+        }
+        userShopProfileSnapshotMapper.updateById(snapshot);
+    }
+
+    private String writeJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (JsonProcessingException e) {
+            log.warn("序列化用户画像快照字段失败, value={}", value, e);
+            return null;
+        }
+    }
+
+    private List<Long> readJsonList(String json) {
+        if (StringUtils.isBlank(json)) {
+            return Collections.emptyList();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<Long>>() {
+            });
+        } catch (JsonProcessingException e) {
+            log.warn("反序列化用户画像快照列表失败, json={}", json, e);
+            return Collections.emptyList();
+        }
+    }
+
+    private Map<Long, Double> readJsonLongDoubleMap(String json) {
+        if (StringUtils.isBlank(json)) {
+            return Collections.emptyMap();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<Map<Long, Double>>() {
+            });
+        } catch (JsonProcessingException e) {
+            log.warn("反序列化用户画像快照映射失败, json={}", json, e);
+            return Collections.emptyMap();
         }
     }
 
@@ -556,6 +767,42 @@ public class UserProfileShopSearchServiceImpl implements UserProfileShopSearchSe
     }
 
     /**
+     * 从分值映射中排除指定 key
+     * 用于确保不同画像维度之间不重复叠加同一店铺
+     */
+    private Map<Long, Double> excludeKeys(Map<Long, Double> scoreMap, Set<Long> excludedKeys) {
+        if (scoreMap.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        if (CollectionUtil.isEmpty(excludedKeys)) {
+            return scoreMap;
+        }
+        Map<Long, Double> result = new LinkedHashMap<>();
+        scoreMap.forEach((key, value) -> {
+            if (key == null || excludedKeys.contains(key)) {
+                return;
+            }
+            result.put(key, value);
+        });
+        return result;
+    }
+
+    /**
+     * 合并两个集合
+     * 返回新集合，避免污染原始画像维度结果
+     */
+    private Set<Long> unionSet(Set<Long> left, Set<Long> right) {
+        Set<Long> result = new LinkedHashSet<>();
+        if (CollectionUtil.isNotEmpty(left)) {
+            result.addAll(left);
+        }
+        if (CollectionUtil.isNotEmpty(right)) {
+            result.addAll(right);
+        }
+        return result;
+    }
+
+    /**
      * 计算行为时间衰减权重
      * @param eventTime 行为发生时间
      * @param now 当前时间
@@ -603,10 +850,13 @@ public class UserProfileShopSearchServiceImpl implements UserProfileShopSearchSe
      */
     private String buildESQuery(UserProfileSearchShopBO req, UserShopProfile profile, long current, long size) {
         try {
+            ShopSearchBusinessBoostProfile businessBoostProfile = loadBusinessBoostProfile();
             return objectMapper.writeValueAsString(
                     UserProfileEsQueryBuilderSupport.buildQuery(
                             req,
                             profile,
+                            userProfileScoreConfig,
+                            businessBoostProfile,
                             current,
                             size,
                             SCRIPT_SHOP_ID_LIMIT
@@ -617,6 +867,42 @@ public class UserProfileShopSearchServiceImpl implements UserProfileShopSearchSe
             ExceptionUtil.throwException(HomeExceptionEnum.HOME_ES_QUERY_FAIL);
             return "{}"; // 兜底
         }
+    }
+
+    /**
+     * 加载业务曝光权重
+     * 运营规则走数据库，支持商家级连锁投放和店铺级单点加权
+     */
+    private ShopSearchBusinessBoostProfile loadBusinessBoostProfile() {
+        ShopSearchBusinessBoostProfile profile = new ShopSearchBusinessBoostProfile();
+        LocalDateTime now = LocalDateTime.now();
+        List<ShopSearchBoostConfig> configs = shopSearchBoostConfigMapper.selectList(
+                new LambdaQueryWrapper<ShopSearchBoostConfig>()
+                        .eq(ShopSearchBoostConfig::getStatus, 1)
+                        .and(wrapper -> wrapper.isNull(ShopSearchBoostConfig::getStartTime).or().le(ShopSearchBoostConfig::getStartTime, now))
+                        .and(wrapper -> wrapper.isNull(ShopSearchBoostConfig::getEndTime).or().ge(ShopSearchBoostConfig::getEndTime, now))
+        );
+        if (CollectionUtil.isEmpty(configs)) {
+            return profile;
+        }
+        Map<Long, Double> sellerBoostWeights = new LinkedHashMap<>();
+        Map<Long, Double> shopBoostWeights = new LinkedHashMap<>();
+        for (ShopSearchBoostConfig config : configs) {
+            if (config.getBoostWeight() == null || config.getBoostWeight().compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            double weight = config.getBoostWeight().doubleValue();
+            if (config.getShopId() != null && config.getShopId() > 0) {
+                shopBoostWeights.put(config.getShopId(), weight);
+                continue;
+            }
+            if (config.getSellerId() != null && config.getSellerId() > 0) {
+                sellerBoostWeights.put(config.getSellerId(), weight);
+            }
+        }
+        profile.setSellerBoostWeights(sellerBoostWeights);
+        profile.setShopBoostWeights(shopBoostWeights);
+        return profile;
     }
 
     /**

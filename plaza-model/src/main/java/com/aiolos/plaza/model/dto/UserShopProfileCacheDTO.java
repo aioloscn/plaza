@@ -1,6 +1,7 @@
-package com.aiolos.plaza.home.model.profile;
+package com.aiolos.plaza.model.dto;
 
 import lombok.Data;
+
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -8,11 +9,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 用户门店画像
- * 由历史订单行为聚合得到
+ * 用户画像缓存 DTO
+ * 供订单侧直接写入 plaza-home Redis 画像缓存使用，字段与 home 侧缓存结构保持一致
  */
 @Data
-public class UserShopProfile {
+public class UserShopProfileCacheDTO {
 
     private Long userId;
 
@@ -20,57 +21,24 @@ public class UserShopProfile {
 
     private List<Long> recentActiveShopIds = new ArrayList<>();
 
-    /**
-     * 近 7 天新发现店铺
-     * 指画像窗口内最近 7 天首次出现且未进入长期偏好的店铺
-     */
     private List<Long> recentNewShopIds = new ArrayList<>();
 
-    /**
-     * key: shopId, value: [0,1] 偏好强度
-     */
     private Map<Long, Double> shopPreference = new LinkedHashMap<>();
 
-    /**
-     * 类目 TopN 兜底列表
-     * 当细粒度类目偏好强度不可用时仍可做粗粒度类目加权
-     */
     private List<Long> favoriteCategoryIds = new ArrayList<>();
 
-    /**
-     * key: categoryId, value: [0,1] 偏好强度
-     */
     private Map<Long, Double> categoryPreference = new LinkedHashMap<>();
 
-    /**
-     * 用户可接受价格中心值（元）
-     */
     private Integer avgPriceLevel;
 
-    /**
-     * 用户价格偏好区间下界（元）
-     */
     private Integer priceLowerBound;
 
-    /**
-     * 用户价格偏好区间上界（元）
-     */
     private Integer priceUpperBound;
 
-    /**
-     * 用户价格容忍波动（元）
-     */
     private Integer priceTolerance;
 
-    /**
-     * 画像可信度 [0,1]
-     */
     private Double profileConfidence;
 
-    /**
-     * 以下字段为增量更新保留的原始聚合值
-     * 检索主要使用上面的派生结果，订单侧刷新 Redis 时基于这些 raw 值继续累加
-     */
     private Map<Long, Double> shopStrengthRaw = new LinkedHashMap<>();
 
     private Map<Long, Double> recentShopStrengthRaw = new LinkedHashMap<>();

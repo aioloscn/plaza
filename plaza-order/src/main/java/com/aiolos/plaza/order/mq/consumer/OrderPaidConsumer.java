@@ -2,6 +2,7 @@ package com.aiolos.plaza.order.mq.consumer;
 
 import com.aiolos.plaza.model.po.ParentOrder;
 import com.aiolos.plaza.model.po.PaymentLog;
+import com.aiolos.plaza.order.application.profile.UserProfileCacheRefreshService;
 import com.aiolos.plaza.mapper.PaymentLogMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +23,9 @@ public class OrderPaidConsumer {
     @Autowired
     private PaymentLogMapper paymentLogMapper;
 
+    @Autowired
+    private UserProfileCacheRefreshService userProfileCacheRefreshService;
+
     @Bean
     public Consumer<ParentOrder> orderPaid() {
         return parentOrder -> {
@@ -32,6 +36,7 @@ public class OrderPaidConsumer {
                         .eq(PaymentLog::getTradeNo, parentOrder.getTradeNo()));
                 if (exists > 0) {
                     log.info("支付流水已存在，跳过重复消费，父订单: {}, tradeNo: {}", parentOrder.getParentOrderSn(), parentOrder.getTradeNo());
+                    userProfileCacheRefreshService.refreshAfterPaid(parentOrder);
                     return;
                 }
 
@@ -48,6 +53,7 @@ public class OrderPaidConsumer {
                 paymentLog.setBuyerId(parentOrder.getBuyerId());
 
                 paymentLogMapper.insert(paymentLog);
+                userProfileCacheRefreshService.refreshAfterPaid(parentOrder);
                 
                 log.info("支付流水日志记录成功，流水ID: {}", paymentLog.getId());
             } catch (Exception e) {
