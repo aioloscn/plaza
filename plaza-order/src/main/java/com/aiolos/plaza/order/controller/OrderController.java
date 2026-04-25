@@ -44,7 +44,7 @@ public class OrderController {
      * 根据支付单号获取订单信息
      */
     @GetMapping("/payInfo")
-    public OrderListVO getPayInfo(@RequestParam String paySn) {
+    public OrderListVO getPayInfo(@RequestParam("paySn") String paySn) {
         Long userId = ContextInfo.getUserId();
         if (userId == null) {
             ExceptionUtil.throwException(ErrorEnum.USER_NOT_LOGGED_IN);
@@ -68,7 +68,7 @@ public class OrderController {
      * 订单列表
      */
     @GetMapping("/list")
-    public List<OrderListVO> list(@RequestParam(required = false) Integer status) {
+    public List<OrderListVO> list(@RequestParam(value = "status", required = false) Integer status) {
         Long userId = ContextInfo.getUserId();
         if (userId == null) {
             ExceptionUtil.throwException(ErrorEnum.USER_NOT_LOGGED_IN);

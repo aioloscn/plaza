@@ -63,7 +63,7 @@ public class CartController {
     @PostMapping("/delete")
     @AnonymousAuth
     public Boolean deleteCartItem(@RequestHeader(value = "device-id", required = false) String deviceId,
-                                       @RequestParam Long cartItemId, HttpServletRequest request) {
+                                       @RequestParam("cartItemId") Long cartItemId, HttpServletRequest request) {
         Long userId = ContextInfo.getUserId();
         plazaCartService.deleteCartItem(userId, resolveDeviceId(deviceId, request), cartItemId);
         return true;

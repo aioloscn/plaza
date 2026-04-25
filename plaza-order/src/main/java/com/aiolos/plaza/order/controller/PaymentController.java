@@ -25,7 +25,7 @@ public class PaymentController {
      * 发起支付
      */
     @PostMapping("/pay")
-    public String pay(@RequestParam String orderSn, @RequestParam(required = false) Integer payType, jakarta.servlet.http.HttpServletRequest request) {
+    public String pay(@RequestParam("orderSn") String orderSn, @RequestParam(value = "payType", required = false) Integer payType, jakarta.servlet.http.HttpServletRequest request) {
         Long userId = ContextInfo.getUserId();
         if (userId == null) {
             ExceptionUtil.throwException(ErrorEnum.USER_NOT_LOGGED_IN);
@@ -64,7 +64,7 @@ public class PaymentController {
      * 用户主动申请退款
      */
     @PostMapping("/refund")
-    public String refund(@RequestParam String parentOrderSn) {
+    public String refund(@RequestParam("parentOrderSn") String parentOrderSn) {
         Long userId = ContextInfo.getUserId();
         if (userId == null) {
             ExceptionUtil.throwException(ErrorEnum.USER_NOT_LOGGED_IN);

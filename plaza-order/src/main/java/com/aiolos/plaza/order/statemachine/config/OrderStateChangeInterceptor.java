@@ -71,6 +71,9 @@ public class OrderStateChangeInterceptor extends StateMachineInterceptorAdapter<
                     }
                 });
     }
-    
-    
+
+    @Override
+    public void postStateChange(State<OrderState, OrderEvent> state, Message<OrderEvent> message, Transition<OrderState, OrderEvent> transition, StateMachine<OrderState, OrderEvent> stateMachine) {
+        super.postStateChange(state, message, transition, stateMachine);
+    }
 }
