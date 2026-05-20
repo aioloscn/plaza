@@ -23,13 +23,13 @@ public class ProductController {
     @GetMapping("/list")
     @Operation(summary = "根据店铺ID查询商品列表")
     public List<ProductVO> list(@RequestParam("shopId") Long shopId) {
-        return shopProductService.listByShopId(shopId);
+        return shopProductService.listStorefrontByShopId(shopId);
     }
 
     @GetMapping("/{id}")
-    @Operation(summary = "根据ID查询商品详情")
+    @Operation(summary = "根据skuId查询商品详情")
     public ProductVO detail(@PathVariable("id") Long id) {
-        return shopProductService.getById(id);
+        return shopProductService.getStorefrontBySkuId(id);
     }
 
     @PostMapping("/update")

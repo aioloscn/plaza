@@ -11,8 +11,8 @@ import java.time.LocalDateTime;
 @Mapper
 public interface ProductStockAggregateMapper extends BaseMapper<ProductStockAggregate> {
 
-    @Insert("INSERT INTO product_stock_aggregate(product_id, available_stock, frozen_stock, confirmed_stock, version, create_time, update_time) " +
-            "VALUES(#{productId}, #{availableStock}, 0, 0, 0, #{now}, #{now}) " +
+    @Insert("INSERT INTO product_stock_aggregate(sku_id, available_stock, frozen_stock, confirmed_stock, version, create_time, update_time) " +
+            "VALUES(#{skuId}, #{availableStock}, 0, 0, 0, #{now}, #{now}) " +
             "ON DUPLICATE KEY UPDATE update_time = VALUES(update_time)")
-    int initAggregate(@Param("productId") Long productId, @Param("availableStock") Integer availableStock, @Param("now") LocalDateTime now);
+    int initAggregate(@Param("skuId") Long skuId, @Param("availableStock") Integer availableStock, @Param("now") LocalDateTime now);
 }

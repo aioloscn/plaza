@@ -9,12 +9,13 @@ import com.aiolos.plaza.cart.service.PlazaCartService;
 import com.aiolos.plaza.cart.model.vo.CartItemVO;
 import com.aiolos.plaza.cart.mq.producer.CartSaveProducer;
 import com.aiolos.plaza.cart.model.vo.CartListVO;
+import com.aiolos.plaza.enums.ProductBizType;
 import com.aiolos.plaza.model.po.CartItem;
 import com.aiolos.plaza.enums.RedisKeyEnum;
-import com.aiolos.plaza.model.po.Product;
 import com.aiolos.plaza.model.po.Shop;
+import com.aiolos.plaza.product.model.dto.ProductCartSkuSnapshotDTO;
+import com.aiolos.plaza.product.service.facade.ProductSnapshotFacade;
 import com.aiolos.plaza.service.CartItemService;
-import com.aiolos.plaza.service.ProductService;
 import com.aiolos.plaza.service.ShopService;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.aiolos.plaza.mq.message.CartAsyncSaveMessage;
@@ -43,13 +44,13 @@ import java.util.stream.Collectors;
 public class PlazaCartServiceImpl implements PlazaCartService {
 
     @Resource
-    private ProductService productService;
-
-    @Resource
     private ShopService shopService;
 
     @Resource
     private CartItemService cartItemService;
+
+    @Resource
+    private ProductSnapshotFacade productSnapshotFacade;
 
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
@@ -59,6 +60,17 @@ public class PlazaCartServiceImpl implements PlazaCartService {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    private static class CartProductSnapshot {
+        private Long skuId;
+        private Integer bizType;
+        private Long shopId;
+        private String productName;
+        private String productImage;
+        private BigDecimal price;
+        private Integer stock;
+        private Integer status;
+    }
 
     private String getCartKey(Long userId, String deviceId) {
         if (userId != null && userId > 0) {
@@ -114,7 +126,8 @@ public class PlazaCartServiceImpl implements PlazaCartService {
         return new CartAsyncSaveMessage(
                 userId,
                 itemVO.getShopId(),
-                itemVO.getProductId(),
+                itemVO.getSkuId(),
+                itemVO.getBizType(),
                 itemVO.getId(),
                 null,
                 itemVO.getQuantity(),
@@ -131,7 +144,8 @@ public class PlazaCartServiceImpl implements PlazaCartService {
         return new CartAsyncSaveMessage(
                 userId,
                 itemVO == null ? null : itemVO.getShopId(),
-                itemVO == null ? null : itemVO.getProductId(),
+                itemVO == null ? null : itemVO.getSkuId(),
+                itemVO == null ? null : itemVO.getBizType(),
                 itemVO == null ? null : itemVO.getId(),
                 null,
                 null,
@@ -144,20 +158,97 @@ public class PlazaCartServiceImpl implements PlazaCartService {
         );
     }
 
-    private Map<Long, Product> loadProductMap(List<CartItemVO> cartItems) {
+    private ProductBizType resolveBizType(Integer bizTypeCode) {
+        ProductBizType bizType = ProductBizType.fromCode(bizTypeCode);
+        return bizType == null ? ProductBizType.LOCAL_RETAIL : bizType;
+    }
+
+    private String buildSnapshotKey(Integer bizTypeCode, Long skuId) {
+        return resolveBizType(bizTypeCode).getCode() + ":" + skuId;
+    }
+
+    private CartProductSnapshot buildSnapshot(ProductCartSkuSnapshotDTO skuSnapshot) {
+        if (skuSnapshot == null) {
+            return null;
+        }
+        CartProductSnapshot snapshot = new CartProductSnapshot();
+        snapshot.skuId = skuSnapshot.getSkuId();
+        snapshot.bizType = resolveBizType(skuSnapshot.getBizType()).getCode();
+        snapshot.shopId = skuSnapshot.getShopId();
+        snapshot.productName = skuSnapshot.getSkuName();
+        snapshot.productImage = skuSnapshot.getImageUrl();
+        snapshot.price = skuSnapshot.getSalePrice();
+        snapshot.stock = skuSnapshot.getAvailableStock();
+        snapshot.status = skuSnapshot.getStatus();
+        return snapshot;
+    }
+
+    private CartProductSnapshot getProductSnapshot(Long skuId, Integer bizTypeCode) {
+        ProductBizType bizType = resolveBizType(bizTypeCode);
+        if (skuId == null) {
+            return null;
+        }
+        return buildSnapshot(productSnapshotFacade.getCartSkuSnapshot(skuId, bizType));
+    }
+
+    private void appendSnapshotGroup(Map<String, CartProductSnapshot> snapshotMap,
+                                     List<Long> skuIds,
+                                     ProductBizType bizType) {
+        if (skuIds == null || skuIds.isEmpty()) {
+            return;
+        }
+        Map<Long, ProductCartSkuSnapshotDTO> skuSnapshotMap = productSnapshotFacade.batchGetCartSkuSnapshots(skuIds, bizType);
+        for (Map.Entry<Long, ProductCartSkuSnapshotDTO> entry : skuSnapshotMap.entrySet()) {
+            CartProductSnapshot snapshot = buildSnapshot(entry.getValue());
+            if (snapshot != null) {
+                snapshotMap.put(buildSnapshotKey(bizType.getCode(), entry.getKey()), snapshot);
+            }
+        }
+    }
+
+    private Map<String, CartProductSnapshot> loadProductSnapshotMap(List<CartItemVO> cartItems) {
         if (cartItems == null || cartItems.isEmpty()) {
             return Collections.emptyMap();
         }
-        List<Long> productIds = cartItems.stream()
-                .map(CartItemVO::getProductId)
-                .filter(Objects::nonNull)
-                .distinct()
-                .collect(Collectors.toList());
-        if (productIds.isEmpty()) {
+        Map<ProductBizType, List<Long>> skuIdsByBizType = new HashMap<>();
+        for (CartItemVO cartItem : cartItems) {
+            if (cartItem == null || cartItem.getSkuId() == null) {
+                continue;
+            }
+            skuIdsByBizType.computeIfAbsent(resolveBizType(cartItem.getBizType()), key -> new ArrayList<>())
+                    .add(cartItem.getSkuId());
+        }
+        return loadProductSnapshotMap(skuIdsByBizType);
+    }
+
+    private Map<String, CartProductSnapshot> loadProductSnapshotMapFromDb(List<CartItem> cartItems) {
+        if (cartItems == null || cartItems.isEmpty()) {
             return Collections.emptyMap();
         }
-        return productService.listByIds(productIds).stream()
-                .collect(Collectors.toMap(Product::getId, p -> p));
+        Map<ProductBizType, List<Long>> skuIdsByBizType = new HashMap<>();
+        for (CartItem cartItem : cartItems) {
+            if (cartItem == null || cartItem.getSkuId() == null) {
+                continue;
+            }
+            skuIdsByBizType.computeIfAbsent(resolveBizType(cartItem.getBizType()), key -> new ArrayList<>())
+                    .add(cartItem.getSkuId());
+        }
+        return loadProductSnapshotMap(skuIdsByBizType);
+    }
+
+    private Map<String, CartProductSnapshot> loadProductSnapshotMap(Map<ProductBizType, List<Long>> skuIdsByBizType) {
+        if (skuIdsByBizType == null || skuIdsByBizType.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<String, CartProductSnapshot> snapshotMap = new HashMap<>();
+        for (Map.Entry<ProductBizType, List<Long>> entry : skuIdsByBizType.entrySet()) {
+            List<Long> skuIds = entry.getValue().stream()
+                    .filter(Objects::nonNull)
+                    .distinct()
+                    .collect(Collectors.toList());
+            appendSnapshotGroup(snapshotMap, skuIds, entry.getKey());
+        }
+        return snapshotMap;
     }
 
     private Map<Long, String> loadShopNameMap(List<Long> shopIds) {
@@ -168,18 +259,19 @@ public class PlazaCartServiceImpl implements PlazaCartService {
                 .collect(Collectors.toMap(Shop::getId, Shop::getName));
     }
 
-    private CartItemVO createCartItemVO(Product product, Long shopId, String shopName, Integer count) {
+    private CartItemVO createCartItemVO(CartProductSnapshot productSnapshot, Long shopId, String shopName, Integer count) {
         CartItemVO itemVO = new CartItemVO();
         itemVO.setId(nextCartItemId());
-        itemVO.setProductId(product.getId());
+        itemVO.setSkuId(productSnapshot.skuId);
+        itemVO.setBizType(productSnapshot.bizType);
         itemVO.setShopId(shopId);
         itemVO.setShopName(shopName);
-        itemVO.setProductName(product.getName());
-        itemVO.setProductImage(product.getImageUrl());
-        itemVO.setPrice(product.getPrice());
+        itemVO.setProductName(productSnapshot.productName);
+        itemVO.setProductImage(productSnapshot.productImage);
+        itemVO.setPrice(productSnapshot.price);
         itemVO.setQuantity(count);
         itemVO.setChecked(true);
-        itemVO.setStock(product.getStock());
+        itemVO.setStock(productSnapshot.stock);
         itemVO.setStatus("VALID");
         return itemVO;
     }
@@ -192,9 +284,10 @@ public class PlazaCartServiceImpl implements PlazaCartService {
         return quantity == null || quantity <= 0 ? 0 : quantity;
     }
 
-    private boolean sameCartItem(CartItemVO itemVO, Long productId, Long shopId) {
+    private boolean sameCartItem(CartItemVO itemVO, Long skuId, Long shopId, Integer bizTypeCode) {
         return itemVO != null
-                && Objects.equals(itemVO.getProductId(), productId)
+                && Objects.equals(itemVO.getSkuId(), skuId)
+                && Objects.equals(resolveBizType(itemVO.getBizType()).getCode(), resolveBizType(bizTypeCode).getCode())
                 && Objects.equals(itemVO.getShopId(), shopId);
     }
 
@@ -223,13 +316,7 @@ public class PlazaCartServiceImpl implements PlazaCartService {
             return;
         }
 
-        Map<Long, Product> productMap = productService.listByIds(dbItems.stream()
-                        .map(CartItem::getProductId)
-                        .filter(Objects::nonNull)
-                        .distinct()
-                        .collect(Collectors.toList()))
-                .stream()
-                .collect(Collectors.toMap(Product::getId, p -> p));
+        Map<String, CartProductSnapshot> productMap = loadProductSnapshotMapFromDb(dbItems);
         Map<Long, String> shopNameMap = loadShopNameMap(dbItems.stream()
                 .map(CartItem::getShopId)
                 .filter(Objects::nonNull)
@@ -237,14 +324,14 @@ public class PlazaCartServiceImpl implements PlazaCartService {
                 .collect(Collectors.toList()));
 
         for (CartItem dbItem : dbItems) {
-            Product product = productMap.get(dbItem.getProductId());
+            CartProductSnapshot product = productMap.get(buildSnapshotKey(dbItem.getBizType(), dbItem.getSkuId()));
             CartItemVO itemVO = buildVOFromDb(dbItem, product, shopNameMap);
             writeCartItem(hashOps, itemVO);
         }
     }
 
     private List<CartItemVO> findCartItems(BoundHashOperations<String, String, String> hashOps,
-                                           Long productId, Long shopId) throws JsonProcessingException {
+                                           Long skuId, Long shopId, Integer bizTypeCode) throws JsonProcessingException {
         Map<String, String> entries = hashOps.entries();
         if (entries == null || entries.isEmpty()) {
             return Collections.emptyList();
@@ -253,17 +340,18 @@ public class PlazaCartServiceImpl implements PlazaCartService {
         List<CartItemVO> matchedItems = new ArrayList<>();
         for (String json : entries.values()) {
             CartItemVO itemVO = readCartItem(json);
-            if (sameCartItem(itemVO, productId, shopId)) {
+            if (sameCartItem(itemVO, skuId, shopId, bizTypeCode)) {
                 matchedItems.add(itemVO);
             }
         }
         return matchedItems;
     }
 
-    private CartItemVO buildVOFromDb(CartItem dbItem, Product product, Map<Long, String> shopNameMap) {
+    private CartItemVO buildVOFromDb(CartItem dbItem, CartProductSnapshot product, Map<Long, String> shopNameMap) {
         CartItemVO itemVO = new CartItemVO();
         itemVO.setId(dbItem.getId());
-        itemVO.setProductId(dbItem.getProductId());
+        itemVO.setSkuId(dbItem.getSkuId());
+        itemVO.setBizType(resolveBizType(dbItem.getBizType()).getCode());
         itemVO.setShopId(dbItem.getShopId());
         itemVO.setShopName(shopNameMap.getOrDefault(dbItem.getShopId(), "未知店铺"));
         itemVO.setQuantity(dbItem.getQuantity());
@@ -276,22 +364,22 @@ public class PlazaCartServiceImpl implements PlazaCartService {
             itemVO.setStatus("INVALID");
             return itemVO;
         }
-        itemVO.setProductName(product.getName());
-        itemVO.setProductImage(product.getImageUrl());
-        itemVO.setPrice(product.getPrice());
-        itemVO.setStock(product.getStock());
+        itemVO.setProductName(product.productName);
+        itemVO.setProductImage(product.productImage);
+        itemVO.setPrice(product.price);
+        itemVO.setStock(product.stock);
         itemVO.setStatus(resolveStatus(product, dbItem.getQuantity()));
         return itemVO;
     }
 
-    private String resolveStatus(Product product, Integer quantity) {
+    private String resolveStatus(CartProductSnapshot product, Integer quantity) {
         if (product == null) {
             return "INVALID";
         }
-        if (product.getStatus() == 0) {
+        if (product.status == null || product.status == 0) {
             return "OFF_SHELF";
         }
-        if (product.getStock() == null || quantity == null || product.getStock() < quantity) {
+        if (product.stock == null || quantity == null || product.stock < quantity) {
             return "NO_STOCK";
         }
         return "VALID";
@@ -314,17 +402,18 @@ public class PlazaCartServiceImpl implements PlazaCartService {
         BoundHashOperations<String, String, String> hashOps = getCartOps(cartKey);
 
         try {
-            Product product = productService.getById(req.getProductId());
-            if (product == null || product.getStatus() == 0) {
+            ProductBizType bizType = resolveBizType(req.getBizType());
+            CartProductSnapshot product = getProductSnapshot(req.getSkuId(), bizType.getCode());
+            if (product == null || product.status == null || product.status == 0) {
                 throw new RuntimeException("商品不存在或已下架");
             }
-            Long shopId = req.getShopId() != null ? req.getShopId() : product.getShopId();
+            Long shopId = req.getShopId() != null ? req.getShopId() : product.shopId;
             Shop shop = shopService.getById(shopId);
             String shopName = shop != null ? shop.getName() : "未知店铺";
             int addCount = normalizeCount(req.getCount());
 
             hydrateCartFromDbIfNeeded(userId, deviceId, hashOps);
-            List<CartItemVO> matchedItems = findCartItems(hashOps, product.getId(), shopId);
+            List<CartItemVO> matchedItems = findCartItems(hashOps, product.skuId, shopId, bizType.getCode());
 
             CartItemVO itemVO;
             if (matchedItems.isEmpty()) {
@@ -333,13 +422,14 @@ public class PlazaCartServiceImpl implements PlazaCartService {
                 // 同店铺同商品始终复用同一个购物车项，只做数量累加
                 itemVO = matchedItems.get(0);
                 int mergedQuantity = safeQuantity(itemVO.getQuantity()) + addCount;
+                itemVO.setBizType(bizType.getCode());
                 itemVO.setShopName(shopName);
-                itemVO.setProductName(product.getName());
-                itemVO.setProductImage(product.getImageUrl());
-                itemVO.setPrice(product.getPrice());
+                itemVO.setProductName(product.productName);
+                itemVO.setProductImage(product.productImage);
+                itemVO.setPrice(product.price);
                 itemVO.setQuantity(mergedQuantity);
                 itemVO.setChecked(true);
-                itemVO.setStock(product.getStock());
+                itemVO.setStock(product.stock);
                 itemVO.setStatus(resolveStatus(product, mergedQuantity));
             }
 
@@ -467,13 +557,7 @@ public class PlazaCartServiceImpl implements PlazaCartService {
                 List<CartItem> dbItems = cartItemService.lambdaQuery().eq(CartItem::getUserId, userId).list();
 
                 if (dbItems != null && !dbItems.isEmpty()) {
-                    Map<Long, Product> productMap = productService.listByIds(dbItems.stream()
-                                    .map(CartItem::getProductId)
-                                    .filter(Objects::nonNull)
-                                    .distinct()
-                                    .collect(Collectors.toList()))
-                            .stream()
-                            .collect(Collectors.toMap(Product::getId, p -> p));
+                    Map<String, CartProductSnapshot> productMap = loadProductSnapshotMapFromDb(dbItems);
                     Map<Long, String> shopNameMap = loadShopNameMap(dbItems.stream()
                             .map(CartItem::getShopId)
                             .filter(Objects::nonNull)
@@ -481,7 +565,7 @@ public class PlazaCartServiceImpl implements PlazaCartService {
                             .collect(Collectors.toList()));
 
                     for (CartItem dbItem : dbItems) {
-                        Product product = productMap.get(dbItem.getProductId());
+                        CartProductSnapshot product = productMap.get(buildSnapshotKey(dbItem.getBizType(), dbItem.getSkuId()));
                         CartItemVO itemVO = buildVOFromDb(dbItem, product, shopNameMap);
                         writeCartItem(hashOps, itemVO);
                         items.add(itemVO);
@@ -507,19 +591,20 @@ public class PlazaCartServiceImpl implements PlazaCartService {
                 }
 
                 // 2. 批量查询数据库获取最新价格、库存和状态
-                Map<Long, Product> productMap = loadProductMap(redisItems);
+                Map<String, CartProductSnapshot> productMap = loadProductSnapshotMap(redisItems);
 
                 for (CartItemVO item : redisItems) {
-                    Product product = productMap.get(item.getProductId());
+                    item.setBizType(resolveBizType(item.getBizType()).getCode());
+                    CartProductSnapshot product = productMap.get(buildSnapshotKey(item.getBizType(), item.getSkuId()));
                     if (product == null) {
                         item.setStatus("INVALID");
                         item.setStock(0);
                         invalidCartItemIds.add(getCartItemField(item.getId()));
                     } else {
-                        item.setProductName(product.getName());
-                        item.setProductImage(product.getImageUrl());
-                        item.setPrice(product.getPrice());
-                        item.setStock(product.getStock());
+                        item.setProductName(product.productName);
+                        item.setProductImage(product.productImage);
+                        item.setPrice(product.price);
+                        item.setStock(product.stock);
                         item.setStatus(resolveStatus(product, item.getQuantity()));
                     }
                     items.add(item);
@@ -575,7 +660,8 @@ public class PlazaCartServiceImpl implements PlazaCartService {
                 for (Map.Entry<String, String> entry : tempEntries.entrySet()) {
                     String tempJson = entry.getValue();
                     CartItemVO tempItem = readCartItem(tempJson);
-                    List<CartItemVO> matchedUserItems = findCartItems(userOps, tempItem.getProductId(), tempItem.getShopId());
+                    tempItem.setBizType(resolveBizType(tempItem.getBizType()).getCode());
+                    List<CartItemVO> matchedUserItems = findCartItems(userOps, tempItem.getSkuId(), tempItem.getShopId(), tempItem.getBizType());
                     CartItemVO finalItem = tempItem;
 
                     if (!matchedUserItems.isEmpty()) {

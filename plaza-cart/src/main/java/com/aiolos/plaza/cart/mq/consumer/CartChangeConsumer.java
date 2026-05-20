@@ -40,8 +40,8 @@ public class CartChangeConsumer {
                     String cartKey = RedisKeyEnum.CART_USER.getKey(message.userId());
                     Boolean delete = stringRedisTemplate.delete(cartKey);
 
-                    log.info("Deleted cart item from MySQL and Redis, userId:{}, productId:{}, cartItemId:{}, orderSn:{}, MySQL result: {}, Redis result: {}",
-                            message.userId(), message.productId(), message.cartItemId(), message.orderSn(), remove, delete);
+                    log.info("Deleted cart item from MySQL and Redis, userId:{}, skuId:{}, cartItemId:{}, orderSn:{}, MySQL result: {}, Redis result: {}",
+                            message.userId(), message.skuId(), message.cartItemId(), message.orderSn(), remove, delete);
                     return;
                 }
 
@@ -55,7 +55,8 @@ public class CartChangeConsumer {
                     CartItem updateItem = new CartItem();
                     updateItem.setId(existingItem.getId());
                     updateItem.setShopId(message.shopId());
-                    updateItem.setProductId(message.productId());
+                    updateItem.setSkuId(message.skuId());
+                    updateItem.setBizType(message.bizType());
                     updateItem.setQuantity(message.quantity());
                     updateItem.setChecked(message.checked());
                     updateItem.setPriceSnapshot(message.priceSnapshot());

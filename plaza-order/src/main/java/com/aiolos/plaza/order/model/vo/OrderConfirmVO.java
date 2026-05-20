@@ -18,7 +18,7 @@ public class OrderConfirmVO implements Serializable {
     @Data
     public static class ItemResult implements Serializable {
         private Long cartItemId;
-        private Long productId;
+        private Long skuId;
         private Long shopId;
         private String productName;
         private Integer quantity;

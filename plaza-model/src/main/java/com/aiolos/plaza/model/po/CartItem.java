@@ -1,6 +1,7 @@
 package com.aiolos.plaza.model.po;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -35,9 +36,15 @@ public class CartItem implements Serializable {
     private Long shopId;
 
     /**
-     * 商品ID
+     * 商品SKU ID
      */
-    private Long productId;
+    @TableField("sku_id")
+    private Long skuId;
+
+    /**
+     * 业务类型 1:外卖/即时零售 2:电商
+     */
+    private Integer bizType;
 
     /**
      * 数量
@@ -78,4 +85,12 @@ public class CartItem implements Serializable {
      * 更新时间
      */
     private LocalDateTime updateTime;
+
+    public Long getProductId() {
+        return skuId;
+    }
+
+    public void setProductId(Long productId) {
+        this.skuId = productId;
+    }
 }

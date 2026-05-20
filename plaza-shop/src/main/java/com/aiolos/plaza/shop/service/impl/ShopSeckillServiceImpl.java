@@ -89,7 +89,8 @@ public class ShopSeckillServiceImpl implements ShopSeckillService {
                 .set(SeckillStockAggregate::getUpdateTime, now));
         if (allocatedRows > 0) {
             int normalRows = productStockAggregateMapper.update(null, new LambdaUpdateWrapper<ProductStockAggregate>()
-                    .eq(ProductStockAggregate::getProductId, activity.getProductId())
+                    // 普通库存聚合已统一为 sku_id，这里在本地零售过渡期内用旧 productId 充当单规格 skuId
+                    .eq(ProductStockAggregate::getSkuId, activity.getProductId())
                     .ge(ProductStockAggregate::getAvailableStock, activity.getStock())
                     .setSql("available_stock = available_stock - " + activity.getStock())
                     .setSql("version = version + 1")

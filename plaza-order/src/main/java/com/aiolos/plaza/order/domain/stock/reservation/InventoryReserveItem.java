@@ -8,7 +8,12 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class InventoryReserveItem {
-    private Long productId;
+    /**
+     * 普通单和电商统一使用真实 skuId；秒杀场景当前仍复用旧商品主键体系
+     */
+    private Long skuId;
+
     private Long activityId;
+
     private Integer quantity;
 }

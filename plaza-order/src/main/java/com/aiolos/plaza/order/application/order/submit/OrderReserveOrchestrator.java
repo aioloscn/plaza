@@ -73,7 +73,10 @@ public class OrderReserveOrchestrator {
             return;
         }
         List<InventoryReserveItem> reserveItems = orderItems.stream()
-                .collect(Collectors.groupingBy(OrderItem::getProductId, Collectors.summingInt(OrderItem::getProductQuantity)))
+                .collect(Collectors.groupingBy(
+                        item -> item.getProductSkuId() != null ? item.getProductSkuId() : item.getProductId(),
+                        Collectors.summingInt(OrderItem::getProductQuantity)
+                ))
                 .entrySet()
                 .stream()
                 .map(entry -> new InventoryReserveItem(entry.getKey(), null, entry.getValue()))

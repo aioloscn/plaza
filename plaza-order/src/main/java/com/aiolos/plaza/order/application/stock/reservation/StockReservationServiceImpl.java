@@ -87,7 +87,7 @@ public class StockReservationServiceImpl implements StockReservationService {
         initNormalAggregateIfNeeded(actualScope, mergedItems, now);
         for (MergedReserveItem entry : mergedItems.values()) {
             freezeFromAvailable(actualScope, entry, now);
-            saveStockLog(entry.productId, entry.activityId, actualScope, orderSn, -entry.quantity, StockLogType.RESERVE_FREEZE, now);
+            saveStockLog(entry.skuId, entry.activityId, actualScope, orderSn, -entry.quantity, StockLogType.RESERVE_FREEZE, now);
         }
 
         StockReservation reservation = new StockReservation();
@@ -109,7 +109,7 @@ public class StockReservationServiceImpl implements StockReservationService {
             item.setOrderSn(orderSn);
             item.setStockScope(actualScope.getCode());
             item.setActivityId(entry.activityId);
-            item.setProductId(entry.productId);
+            item.setSkuId(entry.skuId);
             item.setQuantity(entry.quantity);
             item.setCreateTime(now);
             item.setUpdateTime(now);
@@ -156,7 +156,7 @@ public class StockReservationServiceImpl implements StockReservationService {
         for (StockReservationItem item : items) {
             // 确认支付后：冻结库存转确认库存，不再回到可用库存
             confirmFrozen(stockScope, item, now);
-            saveStockLog(item.getProductId(), item.getActivityId(), stockScope, reservation.getOrderSn(), 0, StockLogType.PAY_CONFIRM, now);
+            saveStockLog(item.getSkuId(), item.getActivityId(), stockScope, reservation.getOrderSn(), 0, StockLogType.PAY_CONFIRM, now);
         }
     }
 
@@ -216,7 +216,7 @@ public class StockReservationServiceImpl implements StockReservationService {
         LocalDateTime now = LocalDateTime.now();
         for (StockReservationItem item : items) {
             rollbackConfirmedToAvailable(stockScope, item, now);
-            saveStockLog(item.getProductId(), item.getActivityId(), stockScope, reservation.getOrderSn(), item.getQuantity(), StockLogType.REFUND_ROLLBACK, now);
+            saveStockLog(item.getSkuId(), item.getActivityId(), stockScope, reservation.getOrderSn(), item.getQuantity(), StockLogType.REFUND_ROLLBACK, now);
         }
     }
 
@@ -295,7 +295,7 @@ public class StockReservationServiceImpl implements StockReservationService {
         for (StockReservationItem item : items) {
             // 释放或过期时：冻结库存回补到可用库存
             releaseFrozenToAvailable(stockScope, item, now);
-            saveStockLog(item.getProductId(), item.getActivityId(), stockScope, reservation.getOrderSn(), item.getQuantity(), stockLogType, now);
+            saveStockLog(item.getSkuId(), item.getActivityId(), stockScope, reservation.getOrderSn(), item.getQuantity(), stockLogType, now);
         }
     }
 
@@ -311,17 +311,17 @@ public class StockReservationServiceImpl implements StockReservationService {
     private Map<String, MergedReserveItem> mergeItems(List<InventoryReserveItem> items, StockScope stockScope, Long activityId) {
         Map<String, MergedReserveItem> result = new LinkedHashMap<>();
         for (InventoryReserveItem item : items) {
-            if (item == null || item.getProductId() == null || item.getQuantity() == null || item.getQuantity() <= 0) {
+            if (item == null || item.getSkuId() == null || item.getQuantity() == null || item.getQuantity() <= 0) {
                 continue;
             }
             Long actualActivityId = stockScope == StockScope.SECKILL ? (item.getActivityId() == null ? activityId : item.getActivityId()) : null;
             if (stockScope == StockScope.SECKILL && actualActivityId == null) {
                 continue;
             }
-            String key = stockScope == StockScope.SECKILL ? actualActivityId + ":" + item.getProductId() : String.valueOf(item.getProductId());
+            String key = stockScope == StockScope.SECKILL ? actualActivityId + ":" + item.getSkuId() : String.valueOf(item.getSkuId());
             MergedReserveItem mergedItem = result.get(key);
             if (mergedItem == null) {
-                result.put(key, new MergedReserveItem(item.getProductId(), actualActivityId, item.getQuantity()));
+                result.put(key, new MergedReserveItem(item.getSkuId(), actualActivityId, item.getQuantity()));
             } else {
                 mergedItem.quantity = mergedItem.quantity + item.getQuantity();
             }
@@ -341,27 +341,27 @@ public class StockReservationServiceImpl implements StockReservationService {
         if (stockScope != StockScope.NORMAL) {
             return;
         }
-        List<Long> productIds = new ArrayList<>();
+        List<Long> skuIds = new ArrayList<>();
         for (MergedReserveItem item : mergedItems.values()) {
-            productIds.add(item.productId);
+            skuIds.add(item.skuId);
         }
-        Map<Long, InventoryProductSnapshot> productSnapshotMap = productSnapshotReader.loadSnapshots(productIds);
+        Map<Long, InventoryProductSnapshot> productSnapshotMap = productSnapshotReader.loadSnapshots(skuIds);
         for (MergedReserveItem item : mergedItems.values()) {
-            InventoryProductSnapshot product = productSnapshotMap.get(item.productId);
+            InventoryProductSnapshot product = productSnapshotMap.get(item.skuId);
             if (product == null || product.getStatus() == null || product.getStatus() != 1) {
                 ExceptionUtil.throwException(OrderExceptionEnum.PRODUCT_NOT_EXIST);
             }
-            productStockAggregateMapper.initAggregate(item.productId, product.getStock(), now);
+            productStockAggregateMapper.initAggregate(item.skuId, product.getStock(), now);
         }
     }
 
     private void freezeFromAvailable(StockScope stockScope, MergedReserveItem item, LocalDateTime now) {
         int rows;
         if (stockScope == StockScope.SECKILL) {
-            seckillStockAggregateMapper.initAggregate(item.activityId, item.productId, now);
+            seckillStockAggregateMapper.initAggregate(item.activityId, item.skuId, now);
             rows = seckillStockAggregateMapper.update(null, new LambdaUpdateWrapper<SeckillStockAggregate>()
                     .eq(SeckillStockAggregate::getActivityId, item.activityId)
-                    .eq(SeckillStockAggregate::getProductId, item.productId)
+                    .eq(SeckillStockAggregate::getProductId, item.skuId)
                     .ge(SeckillStockAggregate::getAvailableStock, item.quantity)
                     .setSql("available_stock = available_stock - " + item.quantity)
                     .setSql("frozen_stock = frozen_stock + " + item.quantity)
@@ -369,7 +369,7 @@ public class StockReservationServiceImpl implements StockReservationService {
                     .set(SeckillStockAggregate::getUpdateTime, now));
         } else {
             rows = productStockAggregateMapper.update(null, new LambdaUpdateWrapper<ProductStockAggregate>()
-                    .eq(ProductStockAggregate::getProductId, item.productId)
+                    .eq(ProductStockAggregate::getSkuId, item.skuId)
                     .ge(ProductStockAggregate::getAvailableStock, item.quantity)
                     .setSql("available_stock = available_stock - " + item.quantity)
                     .setSql("frozen_stock = frozen_stock + " + item.quantity)
@@ -386,7 +386,8 @@ public class StockReservationServiceImpl implements StockReservationService {
         if (stockScope == StockScope.SECKILL) {
             rows = seckillStockAggregateMapper.update(null, new LambdaUpdateWrapper<SeckillStockAggregate>()
                     .eq(SeckillStockAggregate::getActivityId, item.getActivityId())
-                    .eq(SeckillStockAggregate::getProductId, item.getProductId())
+                    // 秒杀库存池当前仍沿用旧商品主键体系，因此这里继续按 productId 字段过滤
+                    .eq(SeckillStockAggregate::getProductId, item.getSkuId())
                     .ge(SeckillStockAggregate::getFrozenStock, item.getQuantity())
                     .setSql("frozen_stock = frozen_stock - " + item.getQuantity())
                     .setSql("confirmed_stock = confirmed_stock + " + item.getQuantity())
@@ -394,7 +395,7 @@ public class StockReservationServiceImpl implements StockReservationService {
                     .set(SeckillStockAggregate::getUpdateTime, now));
         } else {
             rows = productStockAggregateMapper.update(null, new LambdaUpdateWrapper<ProductStockAggregate>()
-                    .eq(ProductStockAggregate::getProductId, item.getProductId())
+                    .eq(ProductStockAggregate::getSkuId, item.getSkuId())
                     .ge(ProductStockAggregate::getFrozenStock, item.getQuantity())
                     .setSql("frozen_stock = frozen_stock - " + item.getQuantity())
                     .setSql("confirmed_stock = confirmed_stock + " + item.getQuantity())
@@ -411,7 +412,8 @@ public class StockReservationServiceImpl implements StockReservationService {
         if (stockScope == StockScope.SECKILL) {
             rows = seckillStockAggregateMapper.update(null, new LambdaUpdateWrapper<SeckillStockAggregate>()
                     .eq(SeckillStockAggregate::getActivityId, item.getActivityId())
-                    .eq(SeckillStockAggregate::getProductId, item.getProductId())
+                    // 秒杀链路尚未商品中心化，字段名仍是 product_id，但值来自当前预占明细的 skuId 位
+                    .eq(SeckillStockAggregate::getProductId, item.getSkuId())
                     .ge(SeckillStockAggregate::getFrozenStock, item.getQuantity())
                     .setSql("available_stock = available_stock + " + item.getQuantity())
                     .setSql("frozen_stock = frozen_stock - " + item.getQuantity())
@@ -419,7 +421,7 @@ public class StockReservationServiceImpl implements StockReservationService {
                     .set(SeckillStockAggregate::getUpdateTime, now));
         } else {
             rows = productStockAggregateMapper.update(null, new LambdaUpdateWrapper<ProductStockAggregate>()
-                    .eq(ProductStockAggregate::getProductId, item.getProductId())
+                    .eq(ProductStockAggregate::getSkuId, item.getSkuId())
                     .ge(ProductStockAggregate::getFrozenStock, item.getQuantity())
                     .setSql("available_stock = available_stock + " + item.getQuantity())
                     .setSql("frozen_stock = frozen_stock - " + item.getQuantity())
@@ -436,7 +438,8 @@ public class StockReservationServiceImpl implements StockReservationService {
         if (stockScope == StockScope.SECKILL) {
             rows = seckillStockAggregateMapper.update(null, new LambdaUpdateWrapper<SeckillStockAggregate>()
                     .eq(SeckillStockAggregate::getActivityId, item.getActivityId())
-                    .eq(SeckillStockAggregate::getProductId, item.getProductId())
+                    // 这里同样保持秒杀旧口径，避免和普通单 skuId 收口混在一起
+                    .eq(SeckillStockAggregate::getProductId, item.getSkuId())
                     .ge(SeckillStockAggregate::getConfirmedStock, item.getQuantity())
                     .setSql("available_stock = available_stock + " + item.getQuantity())
                     .setSql("confirmed_stock = confirmed_stock - " + item.getQuantity())
@@ -444,7 +447,7 @@ public class StockReservationServiceImpl implements StockReservationService {
                     .set(SeckillStockAggregate::getUpdateTime, now));
         } else {
             rows = productStockAggregateMapper.update(null, new LambdaUpdateWrapper<ProductStockAggregate>()
-                    .eq(ProductStockAggregate::getProductId, item.getProductId())
+                    .eq(ProductStockAggregate::getSkuId, item.getSkuId())
                     .ge(ProductStockAggregate::getConfirmedStock, item.getQuantity())
                     .setSql("available_stock = available_stock + " + item.getQuantity())
                     .setSql("confirmed_stock = confirmed_stock - " + item.getQuantity())
@@ -456,9 +459,9 @@ public class StockReservationServiceImpl implements StockReservationService {
         }
     }
 
-    private void saveStockLog(Long productId, Long activityId, StockScope stockScope, String orderSn, Integer amount, StockLogType type, LocalDateTime now) {
+    private void saveStockLog(Long skuId, Long activityId, StockScope stockScope, String orderSn, Integer amount, StockLogType type, LocalDateTime now) {
         ProductStockLog stockLog = new ProductStockLog();
-        stockLog.setProductId(productId);
+        stockLog.setSkuId(skuId);
         stockLog.setActivityId(activityId);
         stockLog.setStockScope(stockScope.getCode());
         stockLog.setOrderSn(orderSn);
@@ -469,12 +472,12 @@ public class StockReservationServiceImpl implements StockReservationService {
     }
 
     private static class MergedReserveItem {
-        private final Long productId;
+        private final Long skuId;
         private final Long activityId;
         private Integer quantity;
 
-        private MergedReserveItem(Long productId, Long activityId, Integer quantity) {
-            this.productId = productId;
+        private MergedReserveItem(Long skuId, Long activityId, Integer quantity) {
+            this.skuId = skuId;
             this.activityId = activityId;
             this.quantity = quantity;
         }

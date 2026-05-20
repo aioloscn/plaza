@@ -26,6 +26,9 @@ public enum RedisKeyEnum {
     /** 商品实时库存 String (长期有效) */
     PRODUCT_STOCK("product:stock:%s", -1L),
 
+    /** 商品中心库存快照缓存 String (按业务线和sku维度缓存24小时) */
+    PRODUCT_SNAPSHOT_INFO("product:snapshot:info:%s:%s", 24 * 3600L),
+
     // ========== 分布式锁 ==========
     /** Canal Leader 锁 (仅允许一个节点消费Canal) */
     LOCK_CANAL_LEADER("lock:canal:leader", 30L),

@@ -92,7 +92,7 @@ CREATE TABLE `order_item` (
 DROP TABLE IF EXISTS `product_stock_aggregate`;
 CREATE TABLE `product_stock_aggregate` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
-  `product_id` bigint(20) NOT NULL,
+  `sku_id` bigint(20) NOT NULL,
   `available_stock` int(11) NOT NULL DEFAULT '0',
   `frozen_stock` int(11) NOT NULL DEFAULT '0',
   `confirmed_stock` int(11) NOT NULL DEFAULT '0',
@@ -100,7 +100,7 @@ CREATE TABLE `product_stock_aggregate` (
   `create_time` datetime DEFAULT NULL,
   `update_time` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_product_id` (`product_id`)
+  UNIQUE KEY `uk_sku_id` (`sku_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COMMENT='库存聚合表';
 
 DROP TABLE IF EXISTS `seckill_stock_aggregate`;
@@ -144,12 +144,12 @@ CREATE TABLE `stock_reservation_item` (
   `order_sn` varchar(64) NOT NULL,
   `stock_scope` int(1) NOT NULL DEFAULT '1' COMMENT '库存池范围：1-普通库存池，2-秒杀库存池',
   `activity_id` bigint(20) DEFAULT NULL COMMENT '秒杀活动ID（普通库存池为空）',
-  `product_id` bigint(20) NOT NULL,
+  `sku_id` bigint(20) NOT NULL,
   `quantity` int(11) NOT NULL,
   `create_time` datetime DEFAULT NULL,
   `update_time` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_reservation_product` (`reservation_no`,`product_id`),
+  UNIQUE KEY `uk_reservation_sku` (`reservation_no`,`sku_id`),
   KEY `idx_order_sn` (`order_sn`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COMMENT='库存预占明细';
 

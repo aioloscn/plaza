@@ -165,11 +165,9 @@ public class OrderAppService implements OrderService {
             vo.setRemainTime(0L);
         }
         
-        List<OrderItemVO> itemVOs = orderItems.stream().map(item -> {
-            OrderItemVO itemVO = new OrderItemVO();
-            BeanUtils.copyProperties(item, itemVO);
-            return itemVO;
-        }).collect(Collectors.toList());
+        List<OrderItemVO> itemVOs = orderItems.stream()
+                .map(this::toOrderItemVO)
+                .collect(Collectors.toList());
         vo.setItems(itemVOs);
         
         return vo;
@@ -272,9 +270,7 @@ public class OrderAppService implements OrderService {
                 List<OrderItem> items = orderItemMap.get(childOrder.getId());
                 if (items != null) {
                     List<OrderItemVO> itemVOs = items.stream().map(item -> {
-                        OrderItemVO itemVO = new OrderItemVO();
-                        BeanUtils.copyProperties(item, itemVO);
-                        return itemVO;
+                        return toOrderItemVO(item);
                     }).collect(Collectors.toList());
                     allItemVOs.addAll(itemVOs);
                 }
@@ -346,5 +342,13 @@ public class OrderAppService implements OrderService {
                 || OrderState.CREATED.getCode().equals(displayStatus)
                 || OrderState.PAYING.getCode().equals(displayStatus)
                 || OrderState.CLOSING.getCode().equals(displayStatus);
+    }
+
+    private OrderItemVO toOrderItemVO(OrderItem item) {
+        OrderItemVO itemVO = new OrderItemVO();
+        BeanUtils.copyProperties(item, itemVO);
+        // 查询口径统一返回 skuId；老数据未回填 product_sku_id 时回落到 product_id
+        itemVO.setSkuId(item.getProductSkuId() != null ? item.getProductSkuId() : item.getProductId());
+        return itemVO;
     }
 }

@@ -30,8 +30,8 @@ public class StockReservationItem implements Serializable {
     @TableField("activity_id")
     private Long activityId;
 
-    @TableField("product_id")
-    private Long productId;
+    @TableField("sku_id")
+    private Long skuId;
 
     @TableField("quantity")
     private Integer quantity;

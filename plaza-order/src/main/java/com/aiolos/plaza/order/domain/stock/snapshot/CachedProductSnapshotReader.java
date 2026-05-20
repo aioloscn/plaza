@@ -27,28 +27,28 @@ public class CachedProductSnapshotReader implements ProductSnapshotReader {
     private ProductSnapshotCache productSnapshotCache;
 
     @Override
-    public Map<Long, InventoryProductSnapshot> loadSnapshots(List<Long> productIds) {
-        if (productIds == null || productIds.isEmpty()) {
+    public Map<Long, InventoryProductSnapshot> loadSnapshots(List<Long> skuIds) {
+        if (skuIds == null || skuIds.isEmpty()) {
             return Collections.emptyMap();
         }
         Map<Long, InventoryProductSnapshot> snapshots = new LinkedHashMap<>();
         List<Long> missIds = new ArrayList<>();
-        for (Long productId : productIds) {
-            if (productId == null) {
+        for (Long skuId : skuIds) {
+            if (skuId == null) {
                 continue;
             }
-            // 先尝试命中缓存，只有 miss 的商品才进入 DB 回源链路
-            InventoryProductSnapshot cachedSnapshot = productSnapshotCache.readSnapshot(productId);
+            // 普通单缓存已切到商品中心快照键，调用侧统一传入真实 skuId
+            InventoryProductSnapshot cachedSnapshot = productSnapshotCache.readSnapshot(skuId);
             if (cachedSnapshot != null) {
-                snapshots.put(productId, cachedSnapshot);
+                snapshots.put(skuId, cachedSnapshot);
                 continue;
             }
-            missIds.add(productId);
+            missIds.add(skuId);
         }
         if (!missIds.isEmpty()) {
             Map<Long, InventoryProductSnapshot> dbSnapshots = dbProductSnapshotReader.loadSnapshots(missIds);
-            dbSnapshots.forEach((productId, snapshot) -> {
-                snapshots.put(productId, snapshot);
+            dbSnapshots.forEach((skuId, snapshot) -> {
+                snapshots.put(skuId, snapshot);
                 productSnapshotCache.writeSnapshot(snapshot);
             });
         }

@@ -18,8 +18,8 @@ public class ProductStockAggregate implements Serializable {
     @TableId(value = "id", type = IdType.AUTO)
     private Long id;
 
-    @TableField("product_id")
-    private Long productId;
+    @TableField("sku_id")
+    private Long skuId;
 
     @TableField("available_stock")
     private Integer availableStock;

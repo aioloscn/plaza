@@ -8,6 +8,7 @@ import com.aiolos.plaza.model.po.Order;
 import com.aiolos.plaza.model.po.OrderItem;
 import com.aiolos.plaza.model.po.ParentOrder;
 import com.aiolos.plaza.order.chain.context.OrderCreateContext;
+import com.aiolos.plaza.order.domain.order.snapshot.OrderProductSnapshotLoader;
 import com.aiolos.plaza.order.domain.order.status.OrderStatusMetadataResolver;
 import com.aiolos.plaza.order.domain.stock.snapshot.InventoryProductSnapshot;
 import com.aiolos.plaza.orderno.provider.api.OrderNoApi;
@@ -40,7 +41,7 @@ public class OrderAggregateFactory {
         context.setParentOrderSn(parentOrderSn);
 
         Address address = context.getAddress();
-        Map<Long, InventoryProductSnapshot> productSnapshotMap = context.getProductSnapshotMap();
+        Map<String, InventoryProductSnapshot> productSnapshotMap = context.getProductSnapshotMap();
         LocalDateTime now = LocalDateTime.now();
 
         for (Map.Entry<Long, List<CartItem>> entry : context.getShopCartMap().entrySet()) {
@@ -111,11 +112,14 @@ public class OrderAggregateFactory {
 
     private OrderItem buildOrderItem(String orderSn,
                                      CartItem cartItem,
-                                     Map<Long, InventoryProductSnapshot> productSnapshotMap) {
-        InventoryProductSnapshot product = productSnapshotMap.get(cartItem.getProductId());
+                                     Map<String, InventoryProductSnapshot> productSnapshotMap) {
+        InventoryProductSnapshot product = productSnapshotMap.get(
+                OrderProductSnapshotLoader.buildSnapshotKey(cartItem.getBizType(), cartItem.getSkuId())
+        );
         OrderItem orderItem = new OrderItem();
         orderItem.setOrderSn(orderSn);
-        orderItem.setProductId(cartItem.getProductId());
+        orderItem.setProductId(cartItem.getSkuId());
+        orderItem.setProductSkuId(cartItem.getSkuId());
         orderItem.setProductPic(product != null ? product.getProductImage() : cartItem.getProductImage());
         orderItem.setProductName(product != null ? product.getProductName() : cartItem.getProductName());
         orderItem.setProductPrice(cartItem.getPriceSnapshot());

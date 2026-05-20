@@ -29,7 +29,7 @@ public class OrderCreateContext extends TradeContext {
     private List<Long> allCartIds = new ArrayList<>();
     private List<Long> orderIds = new ArrayList<>();
     private List<MqLocalMessage> localMessages = new ArrayList<>();
-    private Map<Long, InventoryProductSnapshot> productSnapshotMap;
+    private Map<String, InventoryProductSnapshot> productSnapshotMap;
     private List<Order> pendingOrders = new ArrayList<>();
     private List<OrderItem> pendingOrderItems = new ArrayList<>();
     private ParentOrder pendingParentOrder;

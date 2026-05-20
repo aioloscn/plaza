@@ -2,7 +2,8 @@ CREATE TABLE IF NOT EXISTS `cart_item` (
   `id` bigint(20) NOT NULL COMMENT '购物车项ID',
   `user_id` bigint(20) NOT NULL COMMENT '用户ID',
   `shop_id` bigint(20) NOT NULL COMMENT '店铺ID',
-  `product_id` bigint(20) NOT NULL COMMENT '商品ID',
+  `sku_id` bigint(20) NOT NULL COMMENT '商品SKU ID',
+  `biz_type` tinyint(4) NOT NULL DEFAULT '1' COMMENT '业务类型 1:外卖/即时零售 2:电商',
   `quantity` int(11) NOT NULL COMMENT '数量',
   `checked` tinyint(4) NOT NULL DEFAULT '1' COMMENT '是否选中 0:否 1:是',
   `price_snapshot` decimal(10,2) NOT NULL COMMENT '加入时价格',
@@ -14,5 +15,5 @@ CREATE TABLE IF NOT EXISTS `cart_item` (
   PRIMARY KEY (`id`),
   KEY `idx_user_id` (`user_id`),
   KEY `idx_user_shop_checked` (`user_id`, `shop_id`, `checked`),
-  KEY `idx_user_product` (`user_id`, `product_id`)
+  KEY `idx_user_sku` (`user_id`, `biz_type`, `sku_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='购物车项表';

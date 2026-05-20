@@ -9,7 +9,8 @@ import java.math.BigDecimal;
 public record CartAsyncSaveMessage(
         Long userId,
         Long shopId,
-        Long productId,
+        Long skuId,
+        Integer bizType,
         Long cartItemId,
         String orderSn,
         Integer quantity,

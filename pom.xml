@@ -11,6 +11,7 @@
     <module>plaza-enums</module>
     <module>plaza-model</module>
     <module>plaza-service</module>
+    <module>plaza-product</module>
     <module>plaza-order-no-api</module>
     <module>plaza-order-no-provider</module>
     <module>plaza-home</module>
@@ -31,6 +32,7 @@
     <plaza-enums.version>1.0-SNAPSHOT</plaza-enums.version>
     <plaza-model.version>1.0-SNAPSHOT</plaza-model.version>
     <plaza-service.version>1.0-SNAPSHOT</plaza-service.version>
+    <plaza-product.version>1.0-SNAPSHOT</plaza-product.version>
     <plaza-order-no-api.version>1.0-SNAPSHOT</plaza-order-no-api.version>
     <plaza-order-no-provider.version>1.0-SNAPSHOT</plaza-order-no-provider.version>
     <plaza-home.version>1.0-SNAPSHOT</plaza-home.version>
@@ -67,6 +69,11 @@
         <groupId>com.aiolos</groupId>
         <artifactId>plaza-service</artifactId>
         <version>${plaza-service.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.aiolos</groupId>
+        <artifactId>plaza-product</artifactId>
+        <version>${plaza-product.version}</version>
       </dependency>
       <dependency>
         <groupId>com.aiolos</groupId>

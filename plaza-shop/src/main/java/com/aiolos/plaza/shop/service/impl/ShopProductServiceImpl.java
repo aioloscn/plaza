@@ -2,10 +2,13 @@ package com.aiolos.plaza.shop.service.impl;
 
 import com.aiolos.common.enums.base.BoolEnum;
 import com.aiolos.common.util.ConvertBeanUtil;
+import com.aiolos.plaza.enums.ProductBizType;
 import com.aiolos.plaza.enums.RedisKeyEnum;
 import com.aiolos.plaza.mapper.ProductStockLogMapper;
 import com.aiolos.plaza.model.po.Product;
 import com.aiolos.plaza.model.po.ProductStockLog;
+import com.aiolos.plaza.product.model.dto.ProductStorefrontSkuDTO;
+import com.aiolos.plaza.product.service.facade.ProductStorefrontFacade;
 import com.aiolos.plaza.service.ProductService;
 import com.aiolos.plaza.service.SeckillActivityService;
 import com.aiolos.plaza.shop.model.vo.ProductVO;
@@ -45,6 +48,8 @@ public class ShopProductServiceImpl implements ShopProductService {
     
     private final ObjectMapper objectMapper;
 
+    private final ProductStorefrontFacade productStorefrontFacade;
+
     // 本地缓存 Caffeine (L1 缓存)
     private final Cache<Long, ProductVO> localProductCache = Caffeine.newBuilder()
             .initialCapacity(100)
@@ -82,6 +87,16 @@ public class ShopProductServiceImpl implements ShopProductService {
         }
         
         return voList;
+    }
+
+    @Override
+    public List<ProductVO> listStorefrontByShopId(Long shopId) {
+        // 对外商品列表已切到统一商品中心，当前只读取本地零售发布数据
+        List<ProductStorefrontSkuDTO> skuSnapshotList = productStorefrontFacade.listShopSkuSnapshots(shopId, ProductBizType.LOCAL_RETAIL);
+        if (skuSnapshotList == null || skuSnapshotList.isEmpty()) {
+            return List.of();
+        }
+        return skuSnapshotList.stream().map(this::toStorefrontProductVO).toList();
     }
 
     @Override
@@ -131,6 +146,12 @@ public class ShopProductServiceImpl implements ShopProductService {
     }
 
     @Override
+    public ProductVO getStorefrontBySkuId(Long skuId) {
+        ProductStorefrontSkuDTO skuSnapshot = productStorefrontFacade.getShopSkuSnapshot(skuId, ProductBizType.LOCAL_RETAIL);
+        return toStorefrontProductVO(skuSnapshot);
+    }
+
+    @Override
     public boolean updateProduct(Product product) {
         if (product == null || product.getId() == null) {
             return false;
@@ -163,7 +184,8 @@ public class ShopProductServiceImpl implements ShopProductService {
         if (updateResult && stockDiff != 0) {
             // 记录库存操作日志（后台修改）
             ProductStockLog stockLog = new ProductStockLog();
-            stockLog.setProductId(productId);
+            // 当前本地零售单规格商品过渡期内，旧 productId 直接作为 skuId 记入库存日志
+            stockLog.setSkuId(productId);
             stockLog.setAmount(stockDiff);
             stockLog.setType(3); // 3-后台修改
             stockLog.setCreateTime(LocalDateTime.now());
@@ -184,5 +206,22 @@ public class ShopProductServiceImpl implements ShopProductService {
             localProductCache.invalidate(id);
             log.info("本地商品缓存 L1 清理成功，商品ID: {}", id);
         }
+    }
+
+    private ProductVO toStorefrontProductVO(ProductStorefrontSkuDTO skuSnapshot) {
+        if (skuSnapshot == null || skuSnapshot.getSkuId() == null) {
+            return null;
+        }
+        ProductVO productVO = new ProductVO();
+        // 旧前台接口字段名仍叫 id，这里返回真实 skuId，避免继续透出旧 product.id
+        productVO.setId(skuSnapshot.getSkuId());
+        productVO.setShopId(skuSnapshot.getShopId());
+        productVO.setName(skuSnapshot.getName());
+        productVO.setPrice(skuSnapshot.getPrice());
+        productVO.setStock(skuSnapshot.getStock());
+        productVO.setDescription(skuSnapshot.getDescription());
+        productVO.setImageUrl(skuSnapshot.getImageUrl());
+        productVO.setStatus(skuSnapshot.getStatus());
+        return productVO;
     }
 }

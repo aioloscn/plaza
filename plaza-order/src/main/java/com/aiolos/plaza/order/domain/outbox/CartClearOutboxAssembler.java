@@ -37,7 +37,8 @@ public class CartClearOutboxAssembler {
             CartAsyncSaveMessage cartMessage = new CartAsyncSaveMessage(
                     userId,
                     item.getShopId(),
-                    item.getProductId(),
+                    item.getSkuId(),
+                    item.getBizType(),
                     item.getId(),
                     context.getParentOrderSn(),
                     null,

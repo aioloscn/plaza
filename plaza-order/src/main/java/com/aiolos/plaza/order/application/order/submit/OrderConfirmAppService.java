@@ -7,8 +7,8 @@ import com.aiolos.plaza.mapper.AddressMapper;
 import com.aiolos.plaza.mapper.CartItemMapper;
 import com.aiolos.plaza.model.po.Address;
 import com.aiolos.plaza.model.po.CartItem;
+import com.aiolos.plaza.order.domain.order.snapshot.OrderProductSnapshotLoader;
 import com.aiolos.plaza.order.domain.stock.snapshot.InventoryProductSnapshot;
-import com.aiolos.plaza.order.domain.stock.snapshot.ProductSnapshotReader;
 import com.aiolos.plaza.order.model.bo.OrderSubmitReq;
 import com.aiolos.plaza.order.model.vo.OrderConfirmVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -44,7 +44,7 @@ public class OrderConfirmAppService {
     private CartItemMapper cartItemMapper;
 
     @Autowired
-    private ProductSnapshotReader productSnapshotReader;
+    private OrderProductSnapshotLoader orderProductSnapshotLoader;
 
     @Autowired
     @Qualifier("orderRedisTemplate")
@@ -113,8 +113,7 @@ public class OrderConfirmAppService {
         }
 
         // 批量读取商品快照，减少逐条查询成本并统一校验口径
-        List<Long> productIds = cartItems.stream().map(CartItem::getProductId).distinct().collect(Collectors.toList());
-        Map<Long, InventoryProductSnapshot> productMap = productSnapshotReader.loadSnapshots(productIds);
+        Map<String, InventoryProductSnapshot> productMap = orderProductSnapshotLoader.loadSnapshots(cartItems);
 
         List<OrderConfirmVO.ItemResult> results = new ArrayList<>();
         BigDecimal totalAmount = BigDecimal.ZERO;
@@ -126,10 +125,10 @@ public class OrderConfirmAppService {
         List<CartItem> sortedItems = new ArrayList<>(cartItems);
         sortedItems.sort(Comparator.comparing(CartItem::getId));
         for (CartItem item : sortedItems) {
-            InventoryProductSnapshot product = productMap.get(item.getProductId());
+            InventoryProductSnapshot product = productMap.get(OrderProductSnapshotLoader.buildSnapshotKey(item.getBizType(), item.getSkuId()));
             OrderConfirmVO.ItemResult result = new OrderConfirmVO.ItemResult();
             result.setCartItemId(item.getId());
-            result.setProductId(item.getProductId());
+            result.setSkuId(item.getSkuId());
             result.setShopId(item.getShopId());
             result.setProductName(item.getProductName());
             result.setQuantity(item.getQuantity());
@@ -178,7 +177,8 @@ public class OrderConfirmAppService {
 
             results.add(result);
             fingerprintSource.append("|i=").append(item.getId())
-                    .append(":p=").append(item.getProductId())
+                    .append(":s=").append(item.getSkuId())
+                    .append(",b=").append(item.getBizType())
                     .append(",q=").append(item.getQuantity())
                     .append(",cp=").append(item.getPriceSnapshot())
                     .append(",np=").append(product.getPrice())

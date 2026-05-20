@@ -1,8 +1,8 @@
 package com.aiolos.plaza.order.domain.stock.snapshot;
 
 import com.alibaba.fastjson.JSON;
+import com.aiolos.plaza.enums.ProductBizType;
 import com.aiolos.plaza.enums.RedisKeyEnum;
-import com.aiolos.plaza.model.po.Product;
 
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -23,25 +23,24 @@ public class ProductSnapshotCache {
     @Qualifier("shopRedisTemplate")
     private StringRedisTemplate shopRedisTemplate;
 
-    @Resource
-    private DbProductSnapshotReader dbProductSnapshotReader;
-
     /**
      * 读取单个商品快照缓存；命中失败或反序列化失败时返回 `null`，由上层决定是否回源
      */
-    public InventoryProductSnapshot readSnapshot(Long productId) {
+    public InventoryProductSnapshot readSnapshot(Long skuId) {
         try {
-            String productJson = shopRedisTemplate.opsForValue().get(RedisKeyEnum.PRODUCT_INFO.getKey(productId));
+            // 普通单缓存键切到“业务线 + skuId”，避免再与旧 product.id 缓存串号
+            String productJson = shopRedisTemplate.opsForValue().get(RedisKeyEnum.PRODUCT_SNAPSHOT_INFO
+                    .getKey(ProductBizType.LOCAL_RETAIL.getCode(), skuId));
             if (productJson == null) {
                 return null;
             }
-            Product product = JSON.parseObject(productJson, Product.class);
-            if (product == null || product.getId() == null) {
+            InventoryProductSnapshot snapshot = JSON.parseObject(productJson, InventoryProductSnapshot.class);
+            if (snapshot == null || snapshot.getSkuId() == null) {
                 return null;
             }
-            return dbProductSnapshotReader.toSnapshot(product);
+            return snapshot;
         } catch (Exception ex) {
-            log.warn("读取商品缓存失败，productId={}", productId, ex);
+            log.warn("读取商品缓存失败，skuId={}", skuId, ex);
             return null;
         }
     }
@@ -50,22 +49,14 @@ public class ProductSnapshotCache {
      * 把 DB 回源得到的商品快照回填到缓存，保证后续 confirm / submit / reserve 读取路径一致
      */
     public void writeSnapshot(InventoryProductSnapshot snapshot) {
-        if (snapshot == null || snapshot.getProductId() == null) {
+        if (snapshot == null || snapshot.getSkuId() == null) {
             return;
         }
         try {
-            Product product = new Product();
-            product.setId(snapshot.getProductId());
-            product.setShopId(snapshot.getShopId());
-            product.setName(snapshot.getProductName());
-            product.setImageUrl(snapshot.getProductImage());
-            product.setStatus(snapshot.getStatus());
-            product.setStock(snapshot.getStock());
-            product.setPrice(snapshot.getPrice());
-            shopRedisTemplate.opsForValue().set(RedisKeyEnum.PRODUCT_INFO.getKey(snapshot.getProductId()), JSON.toJSONString(product), 1, TimeUnit.DAYS);
-            shopRedisTemplate.opsForValue().setIfAbsent(RedisKeyEnum.PRODUCT_STOCK.getKey(snapshot.getProductId()), String.valueOf(snapshot.getStock()));
+            shopRedisTemplate.opsForValue().set(RedisKeyEnum.PRODUCT_SNAPSHOT_INFO
+                    .getKey(ProductBizType.LOCAL_RETAIL.getCode(), snapshot.getSkuId()), JSON.toJSONString(snapshot), 1, TimeUnit.DAYS);
         } catch (Exception ex) {
-            log.warn("回填商品缓存失败，productId={}", snapshot.getProductId(), ex);
+            log.warn("回填商品缓存失败，skuId={}", snapshot.getSkuId(), ex);
         }
     }
 }

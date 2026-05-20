@@ -27,10 +27,10 @@ public class ProductStockLog implements Serializable {
     private Long id;
 
     /**
-     * 商品ID
+     * 商品SKU ID
      */
-    @TableField("product_id")
-    private Long productId;
+    @TableField("sku_id")
+    private Long skuId;
 
     /**
      * 关联订单号
@@ -70,7 +70,7 @@ public class ProductStockLog implements Serializable {
 
     public static final String ID = "id";
 
-    public static final String PRODUCT_ID = "product_id";
+    public static final String SKU_ID = "sku_id";
 
     public static final String ORDER_SN = "order_sn";
 

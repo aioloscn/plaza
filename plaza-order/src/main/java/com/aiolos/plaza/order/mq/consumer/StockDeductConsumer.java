@@ -40,7 +40,8 @@ public class StockDeductConsumer {
                         
                         // 记录库存操作日志
                         ProductStockLog stockLog = new ProductStockLog();
-                        stockLog.setProductId(message.productId());
+                        // 旧扣库存消息仍传 productId，这里先按本地零售单规格 skuId 口径落日志
+                        stockLog.setSkuId(message.productId());
                         stockLog.setOrderSn(message.orderSn());
                         stockLog.setAmount(-message.quantity()); // 负数表示扣减
                         stockLog.setType(1); // 1-下单扣减
